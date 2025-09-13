@@ -1,0 +1,17 @@
+apiVersion: 1
+
+datasources:
+  - name: InfluxDB
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    isDefault: true
+    jsonData:
+      version: Flux
+      organization: edge-llm
+      defaultBucket: sensors
+      tlsSkipVerify: true
+    secureJsonData:
+      token: edge-llm-token-12345
+    uid: influxdb-uid
+    editable: true

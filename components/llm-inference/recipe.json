@@ -1,0 +1,40 @@
+{
+  "RecipeFormatVersion": "2020-01-25",
+  "ComponentName": "com.edge.llm.InferenceEngine",
+  "ComponentVersion": "1.0.0",
+  "ComponentDescription": "Edge LLM inference engine for sensor data analysis",
+  "ComponentPublisher": "EdgeLLM",
+  "ComponentConfiguration": {
+    "DefaultConfiguration": {
+      "modelName": "TinyLlama-1.1B-Chat",
+      "modelPath": "/greengrass/v2/packages/artifacts/com.edge.llm.InferenceEngine/1.0.0/models",
+      "maxTokens": 100,
+      "temperature": 0.7,
+      "batchSize": 10,
+      "inferenceIntervalMs": 30000,
+      "anomalyThreshold": 0.8
+    }
+  },
+  "Manifests": [
+    {
+      "Platform": {
+        "os": "linux"
+      },
+      "Lifecycle": {
+        "Install": "pip3 install -r {artifacts:path}/requirements.txt && python3 {artifacts:path}/download_model.py",
+        "Run": "python3 -u {artifacts:path}/llm_inference.py"
+      },
+      "Artifacts": [
+        {
+          "URI": "s3://BUCKET_NAME/COMPONENT_NAME/COMPONENT_VERSION/llm_inference.py"
+        },
+        {
+          "URI": "s3://BUCKET_NAME/COMPONENT_NAME/COMPONENT_VERSION/download_model.py"
+        },
+        {
+          "URI": "s3://BUCKET_NAME/COMPONENT_NAME/COMPONENT_VERSION/requirements.txt"
+        }
+      ]
+    }
+  ]
+}

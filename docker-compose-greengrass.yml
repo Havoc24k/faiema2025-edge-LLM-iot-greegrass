@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  # AWS IoT Greengrass Core running locally
+  greengrass-core:
+    image: amazon/aws-iot-greengrass:2.12.0
+    container_name: greengrass-local
+    privileged: true
+    volumes:
+      # Greengrass root directory
+      - greengrass-root:/greengrass/v2
+      # Docker socket for container management
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Local components
+      - ./components:/opt/components:ro
+      # Local config
+      - ./docker/greengrass/config:/opt/config:ro
+      # Shared models directory
+      - greengrass-models:/opt/models
+    environment:
+      # Greengrass configuration
+      - GGC_ROOT_PATH=/greengrass/v2
+      - AWS_REGION=us-east-1
+      - PROVISION=false
+      # Local development mode
+      - GG_NUCLEUS_DOMAIN_SOCKET_FILEPATH=/greengrass/v2/ipc.socket
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    ports:
+      # Greengrass IPC
+      - "8883:8883"
+      # Local MQTT broker (built-in)
+      - "1883:1883"
+      # Grafana (via official component)
+      - "3000:3000"
+      # ChatBot UI
+      - "8080:8080"
+      # InfluxDB
+      - "8086:8086"
+    networks:
+      - greengrass-network
+    restart: unless-stopped
+    command: >
+      sh -c "
+        echo 'Starting Greengrass in local development mode...' &&
+        mkdir -p /greengrass/v2/config &&
+        cp /opt/config/* /greengrass/v2/config/ 2>/dev/null || true &&
+        /greengrass/v2/bin/loader
+      "
+
+  # Component artifact server (serves components locally)
+  component-server:
+    image: nginx:alpine
+    container_name: greengrass-component-server
+    volumes:
+      - ./components:/usr/share/nginx/html/components:ro
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8090:80"
+    networks:
+      - greengrass-network
+    restart: unless-stopped
+
+networks:
+  greengrass-network:
+    driver: bridge
+
+volumes:
+  greengrass-root:
+  greengrass-models:

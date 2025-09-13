@@ -1,0 +1,49 @@
+{
+  "RecipeFormatVersion": "2020-01-25",
+  "ComponentName": "com.edge.llm.SensorSimulator",
+  "ComponentVersion": "1.0.0",
+  "ComponentDescription": "Industrial sensor data simulator",
+  "ComponentPublisher": "EdgeLLM",
+  "ComponentConfiguration": {
+    "DefaultConfiguration": {
+      "sensorCount": 5,
+      "samplingIntervalMs": 5000,
+      "anomalyProbability": 0.05,
+      "sensors": {
+        "temperature": {
+          "min": 20,
+          "max": 80,
+          "unit": "celsius"
+        },
+        "pressure": {
+          "min": 100,
+          "max": 200,
+          "unit": "kPa"
+        },
+        "vibration": {
+          "min": 0,
+          "max": 10,
+          "unit": "mm/s"
+        }
+      }
+    }
+  },
+  "Manifests": [
+    {
+      "Platform": {
+        "os": "linux"
+      },
+      "Lifecycle": {
+        "Run": "python3 -u {artifacts:path}/sensor_simulator.py"
+      },
+      "Artifacts": [
+        {
+          "URI": "s3://BUCKET_NAME/COMPONENT_NAME/COMPONENT_VERSION/sensor_simulator.py"
+        },
+        {
+          "URI": "s3://BUCKET_NAME/COMPONENT_NAME/COMPONENT_VERSION/requirements.txt"
+        }
+      ]
+    }
+  ]
+}

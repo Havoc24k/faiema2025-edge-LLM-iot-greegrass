@@ -1,0 +1,48 @@
+{
+  "RecipeFormatVersion": "2020-01-25",
+  "ComponentName": "com.edge.llm.TelemetryBridge",
+  "ComponentVersion": "1.0.0",
+  "ComponentDescription": "Bridge between sensor/LLM data and InfluxDB/Grafana visualization",
+  "ComponentPublisher": "EdgeLLM",
+  "ComponentDependencies": {
+    "aws.greengrass.labs.dashboard.InfluxDBGrafana": {
+      "VersionRequirement": ">=2.0.0",
+      "DependencyType": "HARD"
+    },
+    "aws.greengrass.labs.telemetry.InfluxDBPublisher": {
+      "VersionRequirement": ">=1.0.0",
+      "DependencyType": "HARD"
+    }
+  },
+  "ComponentConfiguration": {
+    "DefaultConfiguration": {
+      "sensorTopics": ["local/sensors/+"],
+      "analysisTopics": ["local/analysis/results"],
+      "influxDBEndpoint": "http://localhost:8086",
+      "influxDBBucket": "greengrass_telemetry",
+      "dashboardPort": 3000
+    }
+  },
+  "Manifests": [
+    {
+      "Platform": {
+        "os": "linux"
+      },
+      "Lifecycle": {
+        "Install": "pip3 install -r {artifacts:path}/requirements.txt",
+        "Run": "python3 -u {artifacts:path}/telemetry_bridge.py"
+      },
+      "Artifacts": [
+        {
+          "URI": "s3://BUCKET_NAME/COMPONENT_NAME/COMPONENT_VERSION/telemetry_bridge.py"
+        },
+        {
+          "URI": "s3://BUCKET_NAME/COMPONENT_NAME/COMPONENT_VERSION/requirements.txt"
+        },
+        {
+          "URI": "s3://BUCKET_NAME/COMPONENT_NAME/COMPONENT_VERSION/dashboard.json"
+        }
+      ]
+    }
+  ]
+}

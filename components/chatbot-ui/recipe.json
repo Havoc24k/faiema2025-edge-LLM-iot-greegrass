@@ -1,0 +1,49 @@
+{
+  "RecipeFormatVersion": "2020-01-25",
+  "ComponentName": "com.edge.llm.ChatBotUI",
+  "ComponentVersion": "1.0.0",
+  "ComponentDescription": "Interactive ChatBot web interface for querying sensor data",
+  "ComponentPublisher": "EdgeLLM",
+  "ComponentDependencies": {
+    "com.edge.llm.InferenceEngine": {
+      "VersionRequirement": ">=1.0.0",
+      "DependencyType": "HARD"
+    }
+  },
+  "ComponentConfiguration": {
+    "DefaultConfiguration": {
+      "webPort": 8080,
+      "chatHistoryLimit": 50,
+      "enableDebugMode": true,
+      "sensorDataRetentionHours": 24
+    }
+  },
+  "Manifests": [
+    {
+      "Platform": {
+        "os": "linux"
+      },
+      "Lifecycle": {
+        "Install": "pip3 install -r {artifacts:path}/requirements.txt",
+        "Run": "python3 -u {artifacts:path}/chatbot_server.py"
+      },
+      "Artifacts": [
+        {
+          "URI": "s3://BUCKET_NAME/COMPONENT_NAME/COMPONENT_VERSION/chatbot_server.py"
+        },
+        {
+          "URI": "s3://BUCKET_NAME/COMPONENT_NAME/COMPONENT_VERSION/requirements.txt"
+        },
+        {
+          "URI": "s3://BUCKET_NAME/COMPONENT_NAME/COMPONENT_VERSION/static/chat.js"
+        },
+        {
+          "URI": "s3://BUCKET_NAME/COMPONENT_NAME/COMPONENT_VERSION/static/style.css"
+        },
+        {
+          "URI": "s3://BUCKET_NAME/COMPONENT_NAME/COMPONENT_VERSION/templates/index.html"
+        }
+      ]
+    }
+  ]
+}

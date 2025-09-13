@@ -1,0 +1,171 @@
+version: '3.8'
+
+services:
+  # MQTT Broker for local communication
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: edge-llm-mqtt
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./docker/mosquitto/config:/mosquitto/config
+      - ./docker/mosquitto/data:/mosquitto/data
+      - ./docker/mosquitto/log:/mosquitto/log
+    restart: unless-stopped
+    networks:
+      - edge-llm-network
+
+  # InfluxDB for time-series data storage
+  influxdb:
+    image: influxdb:2.7
+    container_name: edge-llm-influxdb
+    ports:
+      - "8086:8086"
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=admin123
+      - DOCKER_INFLUXDB_INIT_ORG=edge-llm
+      - DOCKER_INFLUXDB_INIT_BUCKET=sensors
+      - DOCKER_INFLUXDB_INIT_RETENTION=30d
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=edge-llm-token-12345
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+      - influxdb-config:/etc/influxdb2
+    restart: unless-stopped
+    networks:
+      - edge-llm-network
+
+  # Grafana for data visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: edge-llm-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - influxdb
+    restart: unless-stopped
+    networks:
+      - edge-llm-network
+
+  # Sensor Data Simulator
+  sensor-simulator:
+    image: python:3.11-slim
+    container_name: edge-llm-sensor-simulator
+    working_dir: /app
+    command: >
+      sh -c "
+        apt-get update && apt-get install -y gcc && rm -rf /var/lib/apt/lists/* &&
+        pip install --no-cache-dir paho-mqtt>=1.6.0 influxdb-client>=1.38.0 requests>=2.31.0 &&
+        useradd -m -u 1000 simulator && chown -R simulator:simulator /app &&
+        su simulator -c 'python local_sensor_simulator.py'
+      "
+    volumes:
+      - ./components/sensor-simulator:/app:ro
+    environment:
+      - MQTT_BROKER=mosquitto
+      - MQTT_PORT=1883
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=edge-llm-token-12345
+      - INFLUXDB_ORG=edge-llm
+      - INFLUXDB_BUCKET=sensors
+      - SENSOR_COUNT=5
+      - SAMPLING_INTERVAL_MS=5000
+      - ANOMALY_PROBABILITY=0.05
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+    depends_on:
+      - mosquitto
+      - influxdb
+    restart: unless-stopped
+    networks:
+      - edge-llm-network
+
+  # LLM Inference Engine
+  llm-inference:
+    image: python:3.11-slim
+    container_name: edge-llm-inference
+    working_dir: /app
+    command: >
+      sh -c "
+        apt-get update && apt-get install -y gcc g++ wget && rm -rf /var/lib/apt/lists/* &&
+        pip install --no-cache-dir torch>=2.0.0 transformers>=4.35.0 accelerate>=0.24.0 bitsandbytes>=0.41.0 paho-mqtt>=1.6.0 requests>=2.31.0 &&
+        mkdir -p /app/models && 
+        useradd -m -u 1000 llm_user && chown -R llm_user:llm_user /app &&
+        su llm_user -c 'python llm_inference.py'
+      "
+    volumes:
+      - ./components/llm-inference:/app:ro
+      - llm-models:/app/models
+    environment:
+      - MQTT_BROKER=mosquitto
+      - MQTT_PORT=1883
+      - MODEL_NAME=TinyLlama-1.1B-Chat
+      - MAX_TOKENS=100
+      - TEMPERATURE=0.7
+      - BATCH_SIZE=10
+      - INFERENCE_INTERVAL_MS=30000
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+      - TRANSFORMERS_CACHE=/app/models
+      - HF_HOME=/app/models
+    depends_on:
+      - mosquitto
+      - sensor-simulator
+    restart: unless-stopped
+    networks:
+      - edge-llm-network
+
+  # ChatBot Web UI
+  chatbot-ui:
+    image: python:3.11-slim
+    container_name: edge-llm-chatbot
+    working_dir: /app
+    command: >
+      sh -c "
+        apt-get update && apt-get install -y gcc && rm -rf /var/lib/apt/lists/* &&
+        pip install --no-cache-dir fastapi>=0.104.0 'uvicorn[standard]>=0.24.0' jinja2>=3.1.2 python-multipart>=0.0.6 paho-mqtt>=1.6.0 influxdb-client>=1.38.0 requests>=2.31.0 &&
+        useradd -m -u 1000 chatbot && chown -R chatbot:chatbot /app &&
+        su chatbot -c 'python chatbot_server.py'
+      "
+    volumes:
+      - ./components/chatbot-ui:/app:ro
+    ports:
+      - "8080:8080"
+    environment:
+      - MQTT_BROKER=mosquitto
+      - MQTT_PORT=1883
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=edge-llm-token-12345
+      - INFLUXDB_ORG=edge-llm
+      - INFLUXDB_BUCKET=sensors
+      - WEB_PORT=8080
+      - CHAT_HISTORY_LIMIT=50
+      - DEBUG_MODE=true
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+    depends_on:
+      - mosquitto
+      - influxdb
+      - llm-inference
+    restart: unless-stopped
+    networks:
+      - edge-llm-network
+
+networks:
+  edge-llm-network:
+    driver: bridge
+
+volumes:
+  influxdb-data:
+  influxdb-config:
+  grafana-data:
+  llm-models:

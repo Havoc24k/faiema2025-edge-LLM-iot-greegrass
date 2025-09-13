@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edge LLM Industrial IoT Assistant</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header class="chat-header">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-robot"></i>
+                    <h1>Edge LLM Assistant</h1>
+                </div>
+                <div class="status-indicator">
+                    <span class="status-dot" id="connectionStatus"></span>
+                    <span id="statusText">Connecting...</span>
+                </div>
+            </div>
+            <div class="system-info">
+                <div class="info-card">
+                    <i class="fas fa-thermometer-half"></i>
+                    <span>Temperature Sensors</span>
+                    <span id="tempStatus">--</span>
+                </div>
+                <div class="info-card">
+                    <i class="fas fa-tachometer-alt"></i>
+                    <span>Pressure Sensors</span>
+                    <span id="pressureStatus">--</span>
+                </div>
+                <div class="info-card">
+                    <i class="fas fa-wave-square"></i>
+                    <span>Vibration Sensors</span>
+                    <span id="vibrationStatus">--</span>
+                </div>
+                <div class="info-card anomaly">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span>Anomalies</span>
+                    <span id="anomalyCount">0</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="chat-main">
+            <div class="chat-container">
+                <div class="chat-messages" id="chatMessages">
+                    <div class="message assistant">
+                        <div class="message-avatar">
+                            <i class="fas fa-robot"></i>
+                        </div>
+                        <div class="message-content">
+                            <div class="message-text">
+                                Hello! I'm your Edge LLM Industrial IoT Assistant. I can help you analyze sensor data, detect anomalies, and answer questions about your industrial systems. What would you like to know?
+                            </div>
+                            <div class="message-time">Just now</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="quick-actions">
+                    <button class="quick-btn" onclick="sendQuickMessage('What is the current system status?')">
+                        <i class="fas fa-chart-line"></i> System Status
+                    </button>
+                    <button class="quick-btn" onclick="sendQuickMessage('Are there any anomalies detected?')">
+                        <i class="fas fa-exclamation-circle"></i> Check Anomalies
+                    </button>
+                    <button class="quick-btn" onclick="sendQuickMessage('Show me temperature readings')">
+                        <i class="fas fa-thermometer-half"></i> Temperature
+                    </button>
+                    <button class="quick-btn" onclick="sendQuickMessage('What are the pressure levels?')">
+                        <i class="fas fa-tachometer-alt"></i> Pressure
+                    </button>
+                </div>
+
+                <div class="chat-input-container">
+                    <div class="input-wrapper">
+                        <input 
+                            type="text" 
+                            id="messageInput" 
+                            placeholder="Ask about sensors, anomalies, or system status..."
+                            maxlength="500"
+                        >
+                        <button id="sendButton" onclick="sendMessage()">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                    <div class="input-suggestions">
+                        <span class="suggestion" onclick="sendQuickMessage('Explain the latest anomaly')">Explain latest anomaly</span>
+                        <span class="suggestion" onclick="sendQuickMessage('Compare current vs historical data')">Compare data</span>
+                        <span class="suggestion" onclick="sendQuickMessage('Recommend maintenance actions')">Maintenance tips</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sidebar">
+                <div class="sidebar-section">
+                    <h3><i class="fas fa-clock"></i> Recent Activity</h3>
+                    <div id="recentActivity" class="activity-list">
+                        <div class="activity-item">
+                            <span class="activity-time">Loading...</span>
+                            <span class="activity-text">Initializing system...</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="sidebar-section">
+                    <h3><i class="fas fa-chart-pie"></i> Quick Links</h3>
+                    <div class="quick-links">
+                        <a href="http://{{request.url.hostname}}:3000" target="_blank" class="link-btn">
+                            <i class="fas fa-chart-bar"></i> Grafana Dashboard
+                        </a>
+                        <a href="/sensor-summary" target="_blank" class="link-btn">
+                            <i class="fas fa-list"></i> Sensor Summary
+                        </a>
+                        <a href="/health" target="_blank" class="link-btn">
+                            <i class="fas fa-heartbeat"></i> Health Check
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/chat.js"></script>
+</body>
+</html>

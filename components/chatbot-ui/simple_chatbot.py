@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class EdgeLLMChatBot:
     def __init__(self):
         self.app = Flask(__name__)
-        self.influxdb_url = "http://influxdb:8086"
+        self.influxdb_url = "http://localhost:8086"
         self.influxdb_database = "sensors"
 
         logger.info("ChatBot connecting to InfluxDB at: %s", self.influxdb_url)
@@ -25,10 +25,13 @@ class EdgeLLMChatBot:
         self.model_name = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
         try:
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+            # Use GPU if available, fallback to CPU
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            logger.info("Using device: %s", device)
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_name,
-                torch_dtype=torch.float32,
-                device_map="cpu"
+                torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                device_map="auto" if device == "cuda" else "cpu"
             )
             # Add pad token if needed
             if self.tokenizer.pad_token is None:
@@ -309,30 +312,37 @@ class EdgeLLMChatBot:
         try:
             # Create sensor context summary
             sensors_summary = self.create_sensor_summary(sensor_data)
+            logger.info("Sensor summary for LLM: %s", sensors_summary)
 
-            # Create proper chat format for TinyLlama
-            system_prompt = f"You are a helpful IoT assistant. Current sensor status: {sensors_summary}"
-            user_prompt = query
+            # Create more explicit prompt for TinyLlama
+            context_prompt = f"""You are monitoring an industrial IoT system.
 
-            # TinyLlama chat format
-            chat_prompt = f"<|system|>\n{system_prompt}</s>\n<|user|>\n{user_prompt}</s>\n<|assistant|>\n"
+CURRENT SENSOR STATUS: {sensors_summary}
 
-            # Tokenize
+Based on this real sensor data, answer the user's question about the system."""
+
+            # TinyLlama chat format with clear role definition
+            chat_prompt = f"<|system|>\n{context_prompt}</s>\n<|user|>\n{query}</s>\n<|assistant|>\n"
+
+            # Tokenize and move to device
             inputs = self.tokenizer(chat_prompt, return_tensors="pt", truncation=True, max_length=512)
+            inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
 
             # Generate response
             with torch.no_grad():
                 outputs = self.model.generate(
-                    inputs.input_ids,
-                    max_new_tokens=100,
-                    temperature=0.7,
+                    inputs["input_ids"],
+                    max_new_tokens=80,
+                    temperature=0.3,
                     do_sample=True,
+                    top_p=0.9,
+                    repetition_penalty=1.1,
                     pad_token_id=self.tokenizer.eos_token_id,
                     eos_token_id=self.tokenizer.eos_token_id
                 )
 
             # Decode response
-            response = self.tokenizer.decode(outputs[0][len(inputs.input_ids[0]):], skip_special_tokens=True)
+            response = self.tokenizer.decode(outputs[0][len(inputs["input_ids"][0]):], skip_special_tokens=True)
 
             # Clean up response
             response = response.strip()
@@ -370,68 +380,6 @@ class EdgeLLMChatBot:
 
         return status
 
-    def generate_fast_response(self, query: str, sensor_data: Dict[str, Any]) -> str:
-        """Generate fast responses using pattern matching and sensor data"""
-        if not sensor_data.get('sensors'):
-            return "I don't have access to sensor data right now. Please try again in a moment."
-
-        sensors = sensor_data['sensors']
-        query_lower = query.lower()
-
-        # Count sensors by type
-        sensor_types = {}
-        anomalies = []
-        all_sensors = []
-
-        for sensor_id, data in sensors.items():
-            sensor_type = data.get('type', 'unknown')
-            sensor_types[sensor_type] = sensor_types.get(sensor_type, 0) + 1
-            all_sensors.append(sensor_id)
-
-            if data.get('is_anomaly', False):
-                anomalies.append(f"{sensor_id} with {data.get('type')} reading {data.get('value', 'N/A')}{data.get('unit', '')}")
-
-        # Pattern matching for different query types
-        if any(word in query_lower for word in ['hello', 'hi', 'hey']):
-            return f"Hello! I'm monitoring {len(sensors)} sensors across your industrial system. How can I help you analyze the data?"
-
-        elif any(word in query_lower for word in ['how many', 'count', 'number']):
-            if 'sensor' in query_lower:
-                total = len(sensors)
-                type_breakdown = ", ".join([f"{count} {stype}" for stype, count in sensor_types.items()])
-                return f"I'm currently monitoring {total} sensors: {type_breakdown}. All sensors are reporting data successfully."
-
-        elif any(word in query_lower for word in ['anomal', 'alert', 'problem', 'issue']):
-            if anomalies:
-                return f"⚠️ ANOMALIES DETECTED: {len(anomalies)} sensor(s) showing unusual readings: {', '.join(anomalies)}. These require immediate attention."
-            else:
-                return "✅ Great news! All sensors are operating within normal parameters. No anomalies detected."
-
-        elif any(word in query_lower for word in ['status', 'health', 'overview']):
-            status_msg = f"System Status: {len(sensors)} sensors active ({', '.join([f'{count} {stype}' for stype, count in sensor_types.items()])}). "
-            if anomalies:
-                status_msg += f"⚠️ {len(anomalies)} anomalies detected requiring attention."
-            else:
-                status_msg += "✅ All systems normal."
-            return status_msg
-
-        elif any(word in query_lower for word in ['name', 'list', 'what are']):
-            return f"Active sensors: {', '.join(sorted(all_sensors))}. These are monitoring temperature, pressure, and vibration across your facility."
-
-        elif 'temperature' in query_lower:
-            temp_sensors = [sid for sid, data in sensors.items() if data.get('type') == 'temperature']
-            if temp_sensors:
-                temp_info = []
-                for sensor_id in temp_sensors:
-                    data = sensors[sensor_id]
-                    temp_info.append(f"{sensor_id}: {data.get('value')}°C")
-                return f"Temperature readings: {', '.join(temp_info)}"
-            else:
-                return "No temperature sensors found in the current data."
-
-        else:
-            # Default helpful response
-            return f"I'm monitoring {len(sensors)} sensors across your system. You can ask me about sensor counts, anomalies, system status, or specific sensor types like temperature. What would you like to know?"
 
     def run(self, host='0.0.0.0', port=8080):
         logger.info("Starting Edge LLM IoT ChatBot on port %d", port)

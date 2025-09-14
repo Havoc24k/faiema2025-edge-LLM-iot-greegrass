@@ -34,6 +34,7 @@
         "os": "linux"
       },
       "Lifecycle": {
+        "Install": "pip3 install -r {artifacts:path}/requirements.txt",
         "Run": "python3 -u {artifacts:path}/simple_sensor_gen.py"
       },
       "Artifacts": [

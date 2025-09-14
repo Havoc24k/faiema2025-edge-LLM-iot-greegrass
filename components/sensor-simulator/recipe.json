@@ -1,7 +1,7 @@
 {
   "RecipeFormatVersion": "2020-01-25",
   "ComponentName": "com.edge.llm.SensorSimulator",
-  "ComponentVersion": "1.0.0",
+  "ComponentVersion": "1.0.1",
   "ComponentDescription": "Industrial sensor data simulator",
   "ComponentPublisher": "EdgeLLM",
   "ComponentConfiguration": {
@@ -39,10 +39,13 @@
       },
       "Artifacts": [
         {
-          "URI": "http://component-server/components/com.edge.llm.SensorSimulator/1.0.0/simple_sensor_gen.py"
+          "URI": "s3://edge-llm-greengrass-artifacts-533267070201/com.edge.llm.SensorSimulator/1.0.1/simple_sensor_gen.py"
         },
         {
-          "URI": "http://component-server/components/com.edge.llm.SensorSimulator/1.0.0/requirements.txt"
+          "URI": "s3://edge-llm-greengrass-artifacts-533267070201/com.edge.llm.SensorSimulator/1.0.1/requirements.txt"
+        },
+        {
+          "URI": "s3://edge-llm-greengrass-artifacts-533267070201/com.edge.llm.SensorSimulator/1.0.1/sensor_utils.py"
         }
       ]
     }

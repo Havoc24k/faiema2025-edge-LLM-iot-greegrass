@@ -345,27 +345,7 @@ resource "aws_s3_bucket_versioning" "component_artifacts" {
   }
 }
 
-# IoT Thing for Greengrass
-resource "aws_iot_thing" "greengrass_core" {
-  name = "EdgeLLMDemoAWS-Final"
-
-  attributes = {
-    type = "GreengrassCore"
-  }
-}
-
-# IoT Thing Group
-resource "aws_iot_thing_group" "greengrass_group" {
-  name = "${var.project_name}-group"
-
-  properties {
-    description = "Greengrass deployment group for ${var.project_name}"
-  }
-
-  tags = {
-    Project = var.project_name
-  }
-}
+# IoT Thing and Thing Group will be created by Greengrass during provisioning
 
 # IAM Role for Greengrass
 resource "aws_iam_role" "greengrass_role" {
@@ -499,15 +479,7 @@ output "s3_bucket_name" {
   description = "S3 bucket for component artifacts"
 }
 
-output "iot_thing_name" {
-  value       = aws_iot_thing.greengrass_core.name
-  description = "IoT Thing name for Greengrass Core"
-}
-
-output "iot_thing_group_arn" {
-  value       = aws_iot_thing_group.greengrass_group.arn
-  description = "IoT Thing Group ARN for deployments"
-}
+# IoT Thing and Thing Group outputs removed - Greengrass will self-provision these
 
 output "token_exchange_role_alias" {
   value       = aws_iot_role_alias.greengrass_role_alias.alias

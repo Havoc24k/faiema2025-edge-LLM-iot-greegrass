@@ -9,20 +9,28 @@ from flask import Flask, request, jsonify, render_template_string
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-logging.basicConfig(level=logging.INFO)
+# Configure comprehensive logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 class EdgeLLMChatBot:
     def __init__(self):
         self.app = Flask(__name__)
+        # InfluxDB 2.x configuration
         self.influxdb_url = "http://localhost:8086"
-        self.influxdb_database = "sensors"
+        self.influxdb_org = "edge-llm"
+        self.influxdb_bucket = "sensors"
+        self.influxdb_token = "edge-llm-token-12345"  # Default token from setup
 
         logger.info("ChatBot connecting to InfluxDB at: %s", self.influxdb_url)
-        logger.info("Loading TinyLlama-1.1B (optimized for edge inference)...")
+        logger.info("InfluxDB config - Org: %s, Bucket: %s", self.influxdb_org, self.influxdb_bucket)
+        logger.info("Loading CodeLlama-7B (optimized for structured data analysis)...")
 
-        # Initialize TinyLlama - specifically designed for edge deployment
-        self.model_name = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+        # Initialize CodeLlama - better for structured data understanding
+        self.model_name = "codellama/CodeLlama-7b-Instruct-hf"
         try:
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
             # Use GPU if available, fallback to CPU
@@ -36,7 +44,7 @@ class EdgeLLMChatBot:
             # Add pad token if needed
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
-            logger.info("Successfully loaded TinyLlama model")
+            logger.info("Successfully loaded CodeLlama model")
             self.model_loaded = True
         except Exception as e:
             logger.error("Failed to load model: %s", e)
@@ -235,8 +243,13 @@ class EdgeLLMChatBot:
                 if not user_message:
                     return jsonify({'error': 'Message cannot be empty'}), 400
 
-                logger.info("Received chat message: %s", user_message)
+                logger.info("=== CHAT REQUEST START ===")
+                logger.info("Received user message: %s", user_message)
+
                 response = self.analyze_query(user_message)
+
+                logger.info("Final response sent to user: %s", response)
+                logger.info("=== CHAT REQUEST END ===")
 
                 return jsonify({'response': response})
 
@@ -245,139 +258,270 @@ class EdgeLLMChatBot:
                 return jsonify({'error': 'Internal server error'}), 500
 
     def get_sensor_data(self) -> Dict[str, Any]:
-        """Get sensor data directly from InfluxDB"""
+        """Get sensor data from InfluxDB 1.8 using InfluxQL"""
         try:
-            # Query to get recent sensor data from InfluxDB
-            query = 'SELECT * FROM "sensor_data" ORDER BY time DESC LIMIT 100'
+            logger.info("Querying InfluxDB 1.8 for sensor data...")
+
+            # InfluxDB 1.8 InfluxQL query to get recent sensor data
+            influxql_query = "SELECT * FROM sensor_data ORDER BY time DESC LIMIT 50"
+            logger.info("InfluxQL query: %s", influxql_query)
+
+            # InfluxDB 1.8 query endpoint
             params = {
-                'db': self.influxdb_database,
-                'q': query
+                'db': 'sensors',
+                'q': influxql_query
             }
 
-            response = requests.get(f"{self.influxdb_url}/query", params=params, timeout=5)
+            logger.info("Sending InfluxQL request to: %s/query", self.influxdb_url)
+
+            response = requests.get(
+                f"{self.influxdb_url}/query",
+                params=params,
+                timeout=10
+            )
+
+            logger.info("InfluxDB response status: %d", response.status_code)
+            logger.info("InfluxDB response headers: %s", dict(response.headers))
 
             if response.status_code == 200:
-                data = response.json()
-                logger.info("Successfully retrieved sensor data from InfluxDB")
-                return self.parse_influxdb_response(data)
+                response_json = response.json()
+                logger.info("InfluxDB JSON response: %s", str(response_json)[:500])
+                return self.parse_influxql_response(response_json)
             else:
-                logger.error("InfluxDB query failed: %s", response.status_code)
-                return {"error": "Failed to retrieve sensor data"}
+                logger.error("InfluxDB query failed: %d - %s", response.status_code, response.text)
+                return {"error": f"InfluxDB query failed: {response.status_code}"}
 
         except Exception as e:
-            logger.error("Error querying InfluxDB: %s", e)
+            logger.error("Error querying InfluxDB: %s", e, exc_info=True)
             return {"error": str(e)}
 
-    def parse_influxdb_response(self, influx_data: Dict) -> Dict[str, Any]:
-        """Parse InfluxDB response into sensor data format"""
+    def parse_influxql_response(self, influxql_json: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse InfluxDB 1.8 InfluxQL JSON response into sensor data format"""
         try:
-            if not influx_data.get('results') or not influx_data['results'][0].get('series'):
+            logger.info("Parsing InfluxQL JSON response...")
+
+            # Check for errors in response
+            if 'error' in influxql_json:
+                logger.error("InfluxDB error: %s", influxql_json['error'])
+                return {"error": influxql_json['error']}
+
+            # Check if results exist
+            results = influxql_json.get('results', [])
+            if not results or len(results) == 0:
+                logger.warning("No results in InfluxQL response")
                 return {"sensors": {}, "message": "No sensor data available"}
 
-            series = influx_data['results'][0]['series'][0]
-            columns = series['columns']
-            values = series['values']
+            # Get first result set
+            result = results[0]
+            if 'error' in result:
+                logger.error("InfluxDB result error: %s", result['error'])
+                return {"error": result['error']}
+
+            # Check if series exist
+            series = result.get('series', [])
+            if not series:
+                logger.warning("No series in InfluxQL response")
+                return {"sensors": {}, "message": "No sensor data available"}
 
             sensors = {}
-            for row in values:
-                # Create a dict from columns and values
-                sensor_entry = dict(zip(columns, row))
 
-                sensor_id = sensor_entry.get('sensor_id', 'unknown')
-                sensors[sensor_id] = {
-                    'type': sensor_entry.get('sensor_type', 'unknown'),
-                    'value': sensor_entry.get('value', 0),
-                    'unit': sensor_entry.get('unit', ''),
-                    'is_anomaly': sensor_entry.get('is_anomaly', False),
-                    'timestamp': sensor_entry.get('time', '')
-                }
+            # Parse each series (measurement)
+            for serie in series:
+                columns = serie.get('columns', [])
+                values = serie.get('values', [])
 
-            return {"sensors": sensors}
+                logger.info("InfluxQL columns: %s", columns)
+                logger.info("InfluxQL values count: %d", len(values))
+
+                # Process each data point
+                for i, value_row in enumerate(values):
+                    if len(value_row) == len(columns):
+                        row_data = dict(zip(columns, value_row))
+
+                        # Extract sensor information
+                        sensor_id = row_data.get('sensor_id', f'sensor_{i}')
+                        sensor_value = float(row_data.get('value', 0))
+                        sensor_time = row_data.get('time', '')
+                        sensor_type = row_data.get('sensor_type', 'unknown')
+                        equipment = row_data.get('equipment_id', 'unknown')
+                        location = row_data.get('location', 'unknown')
+                        is_anomaly = bool(row_data.get('is_anomaly', False))
+
+                        sensors[sensor_id] = {
+                            'id': sensor_id,
+                            'type': sensor_type,
+                            'value': sensor_value,
+                            'timestamp': sensor_time,
+                            'equipment_id': equipment,
+                            'location': location,
+                            'is_anomaly': is_anomaly
+                        }
+
+            logger.info("Successfully parsed %d sensor readings from InfluxQL response", len(sensors))
+            return {
+                "sensors": sensors,
+                "message": f"Retrieved {len(sensors)} sensors"
+            }
 
         except Exception as e:
-            logger.error("Error parsing InfluxDB response: %s", e)
-            return {"sensors": {}, "error": str(e)}
+            logger.error("Error parsing InfluxQL response: %s", e, exc_info=True)
+            return {"sensors": {}, "error": f"Parse error: {str(e)}"}
+
+    def _get_unit_for_type(self, sensor_type: str) -> str:
+        """Get unit for sensor type"""
+        units = {
+            'temperature': '°C',
+            'pressure': 'kPa',
+            'vibration': 'mm/s'
+        }
+        return units.get(sensor_type.lower(), '')
 
     def analyze_query(self, query: str) -> str:
         """Process user query with LLM using sensor data"""
+        logger.info("Starting query analysis for: %s", query)
+
+        # Get sensor data first
+        logger.info("Fetching sensor data from InfluxDB...")
         sensor_data = self.get_sensor_data()
+
+        if "error" in sensor_data:
+            logger.error("Failed to get sensor data: %s", sensor_data["error"])
+            return f"ERROR: Cannot access InfluxDB sensor data. {sensor_data['error']}. Please check InfluxDB configuration."
+
+        logger.info("Successfully retrieved sensor data with %d sensors", len(sensor_data.get('sensors', {})))
 
         if self.model_loaded:
             return self.generate_llm_response(query, sensor_data)
         else:
+            logger.error("LLM model not loaded")
             return "Sorry, the AI model is not available. Please try again later."
 
     def generate_llm_response(self, query: str, sensor_data: Dict[str, Any]) -> str:
-        """Generate response using TinyLlama with sensor data context"""
+        """Generate response using CodeLlama with sensor data context"""
         try:
+            logger.info("=== LLM GENERATION START ===")
+
             # Create sensor context summary
             sensors_summary = self.create_sensor_summary(sensor_data)
-            logger.info("Sensor summary for LLM: %s", sensors_summary)
+            logger.info("Sensor summary for LLM context: %s", sensors_summary)
 
-            # Create more explicit prompt for TinyLlama
-            context_prompt = f"""You are monitoring an industrial IoT system.
+            # Create structured data context for better understanding
+            sensor_json = json.dumps(sensor_data.get('sensors', {}), indent=2)
 
-CURRENT SENSOR STATUS: {sensors_summary}
+            context_prompt = f"""You are an industrial IoT system analyst. You have access to real-time sensor data in JSON format.
 
-Based on this real sensor data, answer the user's question about the system."""
+CURRENT SENSOR DATA (JSON):
+{sensor_json}
 
-            # TinyLlama chat format with clear role definition
-            chat_prompt = f"<|system|>\n{context_prompt}</s>\n<|user|>\n{query}</s>\n<|assistant|>\n"
+SUMMARY: {sensors_summary}
+
+Analyze this structured sensor data and answer the user's question. Reference specific sensor IDs, values, and timestamps from the JSON data above."""
+
+            # CodeLlama Instruct format
+            chat_prompt = f"[INST] {context_prompt}\n\nUser Query: {query} [/INST]"
+
+            logger.info("=== FULL PROMPT SENT TO LLM ===")
+            logger.info("Prompt length: %d characters", len(chat_prompt))
+            logger.info("Full prompt text:\n%s", chat_prompt)
+            logger.info("=== END PROMPT ===")
 
             # Tokenize and move to device
             inputs = self.tokenizer(chat_prompt, return_tensors="pt", truncation=True, max_length=512)
             inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
 
+            logger.info("Input tokens: %d", len(inputs["input_ids"][0]))
+            logger.info("Model device: %s", self.model.device)
+
             # Generate response
+            logger.info("Starting LLM generation...")
+            generation_start_time = datetime.now()
+
             with torch.no_grad():
                 outputs = self.model.generate(
                     inputs["input_ids"],
-                    max_new_tokens=80,
-                    temperature=0.3,
+                    max_new_tokens=150,
+                    temperature=0.1,  # Lower temperature for more precise data analysis
                     do_sample=True,
-                    top_p=0.9,
+                    top_p=0.95,
                     repetition_penalty=1.1,
                     pad_token_id=self.tokenizer.eos_token_id,
                     eos_token_id=self.tokenizer.eos_token_id
                 )
 
+            generation_time = (datetime.now() - generation_start_time).total_seconds()
+            logger.info("LLM generation completed in %.2f seconds", generation_time)
+
             # Decode response
-            response = self.tokenizer.decode(outputs[0][len(inputs["input_ids"][0]):], skip_special_tokens=True)
+            generated_tokens = outputs[0][len(inputs["input_ids"][0]):]
+            response = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
+
+            logger.info("Raw LLM output: '%s'", response)
 
             # Clean up response
             response = response.strip()
             if not response or len(response) < 5:
-                return "I'm analyzing the sensor data. Could you rephrase your question?"
+                fallback_msg = "I'm analyzing the sensor data. Could you rephrase your question?"
+                logger.warning("LLM response too short, using fallback: %s", fallback_msg)
+                return fallback_msg
 
-            logger.info("LLM generated response: %s", response[:100] + "..." if len(response) > 100 else response)
+            logger.info("Final cleaned LLM response: '%s'", response)
+            logger.info("=== LLM GENERATION END ===")
             return response
 
         except Exception as e:
-            logger.error("LLM generation error: %s", e)
+            logger.error("LLM generation error: %s", e, exc_info=True)
             return "Sorry, I'm having trouble processing your request right now. Please try again."
 
     def create_sensor_summary(self, sensor_data: Dict[str, Any]) -> str:
         """Create a brief sensor summary for LLM context"""
+        logger.info("Creating sensor summary from data: %s", sensor_data)
+
         if not sensor_data.get('sensors'):
-            return "No sensor data available"
+            logger.warning("No sensor data available for summary - InfluxDB may be misconfigured")
+            return "ERROR: No sensor data available - InfluxDB connection failed"
 
         sensors = sensor_data['sensors']
+        logger.info("Processing %d sensors for summary", len(sensors))
+
         sensor_types = {}
         anomaly_count = 0
+        recent_values = {}
 
         for sensor_id, data in sensors.items():
             sensor_type = data.get('type', 'unknown')
+            sensor_value = data.get('value', 0)
             sensor_types[sensor_type] = sensor_types.get(sensor_type, 0) + 1
+
+            # Store recent values for each type
+            if sensor_type not in recent_values:
+                recent_values[sensor_type] = []
+            recent_values[sensor_type].append(sensor_value)
+
             if data.get('is_anomaly', False):
                 anomaly_count += 1
 
-        type_summary = ", ".join([f"{count} {stype}" for stype, count in sensor_types.items()])
-        status = f"Monitoring {len(sensors)} sensors ({type_summary})"
-        if anomaly_count > 0:
-            status += f" with {anomaly_count} anomalies detected"
-        else:
-            status += " - all normal"
+        logger.info("Sensor type counts: %s", sensor_types)
+        logger.info("Recent values by type: %s", recent_values)
 
+        # Create detailed summary with actual sensor values
+        type_summary = []
+        for stype, count in sensor_types.items():
+            if stype in recent_values and recent_values[stype]:
+                avg_value = sum(recent_values[stype]) / len(recent_values[stype])
+                unit = self._get_unit_for_type(stype)
+                type_summary.append(f"{count} {stype} sensors (avg: {avg_value:.1f}{unit})")
+            else:
+                type_summary.append(f"{count} {stype} sensors")
+
+        detailed_summary = ", ".join(type_summary)
+        status = f"Monitoring {len(sensors)} sensors: {detailed_summary}"
+
+        if anomaly_count > 0:
+            status += f". WARNING: {anomaly_count} anomalies detected"
+        else:
+            status += ". All readings normal"
+
+        logger.info("Generated sensor summary: %s", status)
         return status
 
 

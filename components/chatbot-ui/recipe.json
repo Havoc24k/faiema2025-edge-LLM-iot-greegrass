@@ -19,7 +19,7 @@
         "os": "linux"
       },
       "Lifecycle": {
-        "Install": "pip3 install -r {artifacts:path}/requirements.txt",
+        "Install": "pip3 install -r {artifacts:path}/requirements.txt --index-url https://download.pytorch.org/whl/cpu",
         "Run": "python3 -u {artifacts:path}/simple_chatbot.py"
       },
       "Artifacts": [
@@ -28,15 +28,6 @@
         },
         {
           "URI": "http://component-server/components/com.edge.llm.ChatBotUI/1.0.0/requirements.txt"
-        },
-        {
-          "URI": "http://component-server/components/com.edge.llm.ChatBotUI/1.0.0/static/chat.js"
-        },
-        {
-          "URI": "http://component-server/components/com.edge.llm.ChatBotUI/1.0.0/static/style.css"
-        },
-        {
-          "URI": "http://component-server/components/com.edge.llm.ChatBotUI/1.0.0/templates/index.html"
         }
       ]
     }

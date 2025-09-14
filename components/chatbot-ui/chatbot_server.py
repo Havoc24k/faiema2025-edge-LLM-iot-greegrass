@@ -166,23 +166,85 @@ class ChatBotServer:
         @self.app.get("/chat-history")
         async def get_chat_history():
             """Get recent chat history"""
-            return {"history": list(self.chat_history)}\n        
+            return {"history": list(self.chat_history)}
+
         @self.app.websocket("/ws")
         async def websocket_endpoint(websocket: WebSocket):
             await self.connect_websocket(websocket)
     
     async def connect_websocket(self, websocket: WebSocket):
-        \"\"\"Handle WebSocket connections for real-time updates\"\"\"\n        await websocket.accept()\n        self.active_connections.append(websocket)\n        \n        try:\n            while True:\n                # Keep connection alive and listen for messages\n                data = await websocket.receive_text()\n                message_data = json.loads(data)\n                \n                if message_data.get('type') == 'chat':\n                    # Process chat message\n                    response = await self.query_llm(message_data.get('message', ''))\n                    await websocket.send_text(json.dumps({\n                        'type': 'response',\n                        'message': response,\n                        'timestamp': datetime.utcnow().isoformat()\n                    }))\n                    \n        except Exception as e:\n            logger.error(f\"WebSocket error: {e}\")\n        finally:\n            if websocket in self.active_connections:\n                self.active_connections.remove(websocket)
+        """Handle WebSocket connections for real-time updates"""
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+        try:
+            while True:
+                # Keep connection alive and listen for messages
+                data = await websocket.receive_text()
+                message_data = json.loads(data)
+
+                if message_data.get('type') == 'chat':
+                    # Process chat message
+                    response = await self.query_llm(message_data.get('message', ''))
+                    await websocket.send_text(json.dumps({
+                        'type': 'response',
+                        'message': response,
+                        'timestamp': datetime.utcnow().isoformat()
+                    }))
+
+        except Exception as e:
+            logger.error(f"WebSocket error: {e}")
+        finally:
+            if websocket in self.active_connections:
+                self.active_connections.remove(websocket)
     
     async def broadcast_message(self, message: Dict):
-        \"\"\"Broadcast message to all connected WebSocket clients\"\"\"\n        if self.active_connections:\n            message_json = json.dumps(message)\n            # Create a copy of connections to avoid modification during iteration\n            connections_copy = self.active_connections.copy()\n            for connection in connections_copy:\n                try:\n                    await connection.send_text(message_json)\n                except:\n                    # Remove broken connections\n                    if connection in self.active_connections:\n                        self.active_connections.remove(connection)
+        """Broadcast message to all connected WebSocket clients"""
+        if self.active_connections:
+            message_json = json.dumps(message)
+            # Create a copy of connections to avoid modification during iteration
+            connections_copy = self.active_connections.copy()
+            for connection in connections_copy:
+                try:
+                    await connection.send_text(message_json)
+                except:
+                    # Remove broken connections
+                    if connection in self.active_connections:
+                        self.active_connections.remove(connection)
     
     async def query_llm(self, user_message: str) -> str:
-        \"\"\"Send query to LLM inference engine and get response\"\"\"\n        try:\n            # Get sensor context\n            sensor_context = await self.get_sensor_context_for_llm()\n            \n            # Create enhanced prompt with sensor data context\n            enhanced_prompt = self.create_context_aware_prompt(user_message, sensor_context)\n            \n            # Publish to LLM inference engine topic\n            chat_request = {\n                \"type\": \"chat_query\",\n                \"message\": user_message,\n                \"enhanced_prompt\": enhanced_prompt,\n                \"timestamp\": datetime.utcnow().isoformat(),\n                \"context\": \"chatbot\"\n            }\n            \n            # Send request to LLM\n            await self.publish_to_llm(chat_request)\n            \n            # Wait for response (in production, this would be handled via subscription)\n            # For now, return a contextual response\n            return self.generate_contextual_response(user_message, sensor_context)\n            \n        except Exception as e:\n            logger.error(f\"Error querying LLM: {e}\")\n            return f\"I apologize, but I encountered an error processing your request: {str(e)}\"
+        """Send query to LLM inference engine and get response"""
+        try:
+            # Get sensor context
+            sensor_context = await self.get_sensor_context_for_llm()
+
+            # Create enhanced prompt with sensor data context
+            enhanced_prompt = self.create_context_aware_prompt(user_message, sensor_context)
+
+            # Publish to LLM inference engine topic
+            chat_request = {
+                "type": "chat_query",
+                "message": user_message,
+                "enhanced_prompt": enhanced_prompt,
+                "timestamp": datetime.utcnow().isoformat(),
+                "context": "chatbot"
+            }
+
+            # Send request to LLM
+            await self.publish_to_llm(chat_request)
+
+            # Wait for response (in production, this would be handled via subscription)
+            # For now, return a contextual response
+            return self.generate_contextual_response(user_message, sensor_context)
+
+        except Exception as e:
+            logger.error(f"Error querying LLM: {e}")
+            return f"I apologize, but I encountered an error processing your request: {str(e)}"
     
     def create_context_aware_prompt(self, user_message: str, sensor_context: Dict) -> str:
-        \"\"\"Create an enhanced prompt with sensor data context\"\"\"\n        context_prompt = f\"\"\"You are an industrial IoT AI assistant with access to real-time sensor data. 
-        
+        """Create an enhanced prompt with sensor data context"""
+        context_prompt = f"""You are an industrial IoT AI assistant with access to real-time sensor data.
+
 Current sensor status:
 {json.dumps(sensor_context, indent=2)}
 
@@ -194,15 +256,241 @@ Please provide a helpful response based on the current sensor data. Focus on:
 - Actionable insights or recommendations
 - Answer the user's specific question in context
 
-Keep responses concise and practical.\"\"\"\n        \n        return context_prompt
+Keep responses concise and practical."""
+
+        return context_prompt
     
     async def get_sensor_context_for_llm(self) -> Dict:
-        \"\"\"Get recent sensor data for LLM context\"\"\"\n        # Get recent sensor data (last 30 minutes)\n        cutoff_time = datetime.utcnow() - timedelta(minutes=30)\n        recent_data = []\n        \n        for data in self.sensor_data:\n            try:\n                data_time = datetime.fromisoformat(data.get('timestamp', ''))\n                if data_time >= cutoff_time:\n                    recent_data.append(data)\n            except:\n                continue\n        \n        if not recent_data:\n            return {\"status\": \"No recent sensor data available\"}\n        \n        # Summarize recent data\n        summary = {}\n        total_anomalies = 0\n        \n        for data in recent_data:\n            sensor_type = data.get('type', 'unknown')\n            if sensor_type not in summary:\n                summary[sensor_type] = []\n            \n            summary[sensor_type].append({\n                \"value\": data.get('value'),\n                \"unit\": data.get('unit'),\n                \"is_anomaly\": data.get('is_anomaly', False),\n                \"timestamp\": data.get('timestamp')\n            })\n            \n            if data.get('is_anomaly', False):\n                total_anomalies += 1\n        \n        # Get latest analysis results\n        latest_analysis = list(self.analysis_results)[-5:] if self.analysis_results else []\n        \n        return {\n            \"sensor_data_summary\": summary,\n            \"total_anomalies_30min\": total_anomalies,\n            \"total_readings_30min\": len(recent_data),\n            \"latest_llm_analysis\": latest_analysis\n        }
+        """Get recent sensor data for LLM context"""
+        # Get recent sensor data (last 30 minutes)
+        cutoff_time = datetime.utcnow() - timedelta(minutes=30)
+        recent_data = []
+
+        for data in self.sensor_data:
+            try:
+                data_time = datetime.fromisoformat(data.get('timestamp', ''))
+                if data_time >= cutoff_time:
+                    recent_data.append(data)
+            except:
+                continue
+
+        if not recent_data:
+            return {"status": "No recent sensor data available"}
+
+        # Summarize recent data
+        summary = {}
+        total_anomalies = 0
+
+        for data in recent_data:
+            sensor_type = data.get('type', 'unknown')
+            if sensor_type not in summary:
+                summary[sensor_type] = []
+
+            summary[sensor_type].append({
+                "value": data.get('value'),
+                "unit": data.get('unit'),
+                "is_anomaly": data.get('is_anomaly', False),
+                "timestamp": data.get('timestamp')
+            })
+
+            if data.get('is_anomaly', False):
+                total_anomalies += 1
+
+        # Get latest analysis results
+        latest_analysis = list(self.analysis_results)[-5:] if self.analysis_results else []
+
+        return {
+            "sensor_data_summary": summary,
+            "total_anomalies_30min": total_anomalies,
+            "total_readings_30min": len(recent_data),
+            "latest_llm_analysis": latest_analysis
+        }
     
     def generate_contextual_response(self, user_message: str, sensor_context: Dict) -> str:
-        \"\"\"Generate a contextual response based on sensor data (fallback for when LLM is not available)\"\"\"\n        message_lower = user_message.lower()\n        \n        # Analyze user intent\n        if any(word in message_lower for word in ['status', 'how', 'current', 'now']):\n            return self.get_system_status_response(sensor_context)\n        elif any(word in message_lower for word in ['anomaly', 'alert', 'problem', 'issue']):\n            return self.get_anomaly_response(sensor_context)\n        elif any(word in message_lower for word in ['temperature', 'temp', 'hot', 'cold']):\n            return self.get_temperature_response(sensor_context)\n        elif any(word in message_lower for word in ['pressure']):\n            return self.get_pressure_response(sensor_context)\n        elif any(word in message_lower for word in ['vibration', 'vibrate']):\n            return self.get_vibration_response(sensor_context)\n        else:\n            return self.get_general_response(sensor_context)
+        """Generate a contextual response based on sensor data (fallback for when LLM is not available)"""
+        message_lower = user_message.lower()
+
+        # Analyze user intent
+        if any(word in message_lower for word in ['status', 'how', 'current', 'now']):
+            return self.get_system_status_response(sensor_context)
+        elif any(word in message_lower for word in ['anomaly', 'alert', 'problem', 'issue']):
+            return self.get_anomaly_response(sensor_context)
+        elif any(word in message_lower for word in ['temperature', 'temp', 'hot', 'cold']):
+            return self.get_temperature_response(sensor_context)
+        elif any(word in message_lower for word in ['pressure']):
+            return self.get_pressure_response(sensor_context)
+        elif any(word in message_lower for word in ['vibration', 'vibrate']):
+            return self.get_vibration_response(sensor_context)
+        else:
+            return self.get_general_response(sensor_context)
     
-    def get_system_status_response(self, context: Dict) -> str:\n        \"\"\"Generate system status response\"\"\"\n        if context.get(\"status\") == \"No recent sensor data available\":\n            return \"I don't have recent sensor data to provide a system status. Please check if the sensors are connected and transmitting data.\"\n        \n        anomalies = context.get(\"total_anomalies_30min\", 0)\n        readings = context.get(\"total_readings_30min\", 0)\n        \n        if anomalies == 0:\n            return f\"✅ System Status: All sensors are operating normally. I've analyzed {readings} readings in the last 30 minutes with no anomalies detected.\"\n        else:\n            return f\"⚠️ System Status: {anomalies} anomalies detected out of {readings} readings in the last 30 minutes. Please check the Grafana dashboard for detailed analysis.\"\n    \n    def get_anomaly_response(self, context: Dict) -> str:\n        \"\"\"Generate anomaly-focused response\"\"\"\n        anomalies = context.get(\"total_anomalies_30min\", 0)\n        \n        if anomalies == 0:\n            return \"No anomalies detected in the last 30 minutes. All sensor readings are within expected ranges.\"\n        else:\n            return f\"I've detected {anomalies} anomalies in the last 30 minutes. These could indicate equipment issues or environmental changes that require attention.\"\n    \n    def get_temperature_response(self, context: Dict) -> str:\n        \"\"\"Generate temperature-specific response\"\"\"\n        sensor_data = context.get(\"sensor_data_summary\", {})\n        temp_data = sensor_data.get(\"temperature\", [])\n        \n        if not temp_data:\n            return \"No recent temperature data available.\"\n        \n        latest_temp = temp_data[-1] if temp_data else None\n        if latest_temp:\n            value = latest_temp.get(\"value\", 0)\n            unit = latest_temp.get(\"unit\", \"°C\")\n            is_anomaly = latest_temp.get(\"is_anomaly\", False)\n            \n            status = \"⚠️ ANOMALY\" if is_anomaly else \"✅ Normal\"\n            return f\"Latest temperature reading: {value}{unit} - {status}. Based on {len(temp_data)} readings in the last 30 minutes.\"\n        \n        return \"Unable to retrieve specific temperature information.\"\n    \n    def get_pressure_response(self, context: Dict) -> str:\n        \"\"\"Generate pressure-specific response\"\"\"\n        sensor_data = context.get(\"sensor_data_summary\", {})\n        pressure_data = sensor_data.get(\"pressure\", [])\n        \n        if not pressure_data:\n            return \"No recent pressure data available.\"\n        \n        latest_pressure = pressure_data[-1] if pressure_data else None\n        if latest_pressure:\n            value = latest_pressure.get(\"value\", 0)\n            unit = latest_pressure.get(\"unit\", \"kPa\")\n            is_anomaly = latest_pressure.get(\"is_anomaly\", False)\n            \n            status = \"⚠️ ANOMALY\" if is_anomaly else \"✅ Normal\"\n            return f\"Latest pressure reading: {value}{unit} - {status}. Based on {len(pressure_data)} readings in the last 30 minutes.\"\n        \n        return \"Unable to retrieve specific pressure information.\"\n    \n    def get_vibration_response(self, context: Dict) -> str:\n        \"\"\"Generate vibration-specific response\"\"\"\n        sensor_data = context.get(\"sensor_data_summary\", {})\n        vib_data = sensor_data.get(\"vibration\", [])\n        \n        if not vib_data:\n            return \"No recent vibration data available.\"\n        \n        latest_vib = vib_data[-1] if vib_data else None\n        if latest_vib:\n            value = latest_vib.get(\"value\", 0)\n            unit = latest_vib.get(\"unit\", \"mm/s\")\n            is_anomaly = latest_vib.get(\"is_anomaly\", False)\n            \n            status = \"⚠️ ANOMALY\" if is_anomaly else \"✅ Normal\"\n            return f\"Latest vibration reading: {value}{unit} - {status}. Based on {len(vib_data)} readings in the last 30 minutes.\"\n        \n        return \"Unable to retrieve specific vibration information.\"\n    \n    def get_general_response(self, context: Dict) -> str:\n        \"\"\"Generate general response\"\"\"\n        readings = context.get(\"total_readings_30min\", 0)\n        anomalies = context.get(\"total_anomalies_30min\", 0)\n        \n        return f\"I'm monitoring your industrial sensors in real-time. In the last 30 minutes, I've processed {readings} sensor readings with {anomalies} anomalies detected. You can ask me about specific sensors, system status, or any anomalies you're concerned about.\"\n    \n    async def publish_to_llm(self, message: Dict):\n        \"\"\"Publish message to LLM inference engine\"\"\"\n        try:\n            topic = \"local/chat/requests\"\n            message_json = json.dumps(message)\n            \n            request = PublishToTopicRequest()\n            request.topic = topic\n            publish_message = PublishMessage()\n            publish_message.binary_message = BinaryMessage()\n            publish_message.binary_message.message = message_json.encode('utf-8')\n            request.publish_message = publish_message\n            \n            operation = self.ipc_client.new_publish_to_topic()\n            operation.activate(request)\n            future = operation.get_response()\n            future.result(timeout=5.0)\n            \n            logger.info(f\"Published chat request to LLM\")\n            \n        except Exception as e:\n            logger.error(f\"Failed to publish to LLM: {e}\")\n    \n    def subscribe_to_topics(self):\n        \"\"\"Subscribe to sensor data and analysis topics\"\"\"\n        topics = [\n            \"local/sensors/+\",\n            \"local/analysis/results\",\n            \"local/chat/responses\"\n        ]\n        \n        for topic in topics:\n            try:\n                request = SubscribeToTopicRequest()\n                request.topic = topic\n                \n                handler = self.handle_message\n                operation = self.ipc_client.new_subscribe_to_topic(handler)\n                future = operation.activate(request)\n                future.result(timeout=10.0)\n                \n                logger.info(f\"Subscribed to topic: {topic}\")\n                \n            except Exception as e:\n                logger.error(f\"Failed to subscribe to {topic}: {e}\")\n    \n    def handle_message(self, message: SubscriptionResponseMessage):\n        \"\"\"Handle incoming MQTT messages\"\"\"\n        try:\n            topic = message.topic\n            payload = json.loads(message.binary_message.message.decode('utf-8'))\n            \n            if \"sensors\" in topic:\n                # Store sensor data\n                self.sensor_data.append(payload)\n            elif \"analysis\" in topic:\n                # Store analysis results\n                self.analysis_results.append(payload)\n            elif \"chat/responses\" in topic:\n                # Handle LLM responses\n                asyncio.create_task(self.broadcast_message(payload))\n                \n        except Exception as e:\n            logger.error(f\"Error handling message: {e}\")\n    \n    async def start_server(self):\n        \"\"\"Start the ChatBot web server\"\"\"\n        logger.info(f\"Starting ChatBot UI server on port {self.web_port}\")\n        \n        # Subscribe to topics first\n        self.subscribe_to_topics()\n        \n        # Start the web server\n        config = uvicorn.Config(\n            self.app,\n            host=\"0.0.0.0\",\n            port=self.web_port,\n            log_level=\"info\" if self.debug_mode else \"warning\"\n        )\n        server = uvicorn.Server(config)\n        await server.serve()
+    def get_system_status_response(self, context: Dict) -> str:
+        """Generate system status response"""
+        if context.get("status") == "No recent sensor data available":
+            return "I don't have recent sensor data to provide a system status. Please check if the sensors are connected and transmitting data."
+
+        anomalies = context.get("total_anomalies_30min", 0)
+        readings = context.get("total_readings_30min", 0)
+
+        if anomalies == 0:
+            return f"✅ System Status: All sensors are operating normally. I've analyzed {readings} readings in the last 30 minutes with no anomalies detected."
+        else:
+            return f"⚠️ System Status: {anomalies} anomalies detected out of {readings} readings in the last 30 minutes. Please check the Grafana dashboard for detailed analysis."
+
+    def get_anomaly_response(self, context: Dict) -> str:
+        """Generate anomaly-focused response"""
+        anomalies = context.get("total_anomalies_30min", 0)
+
+        if anomalies == 0:
+            return "No anomalies detected in the last 30 minutes. All sensor readings are within expected ranges."
+        else:
+            return f"I've detected {anomalies} anomalies in the last 30 minutes. These could indicate equipment issues or environmental changes that require attention."
+
+    def get_temperature_response(self, context: Dict) -> str:
+        """Generate temperature-specific response"""
+        sensor_data = context.get("sensor_data_summary", {})
+        temp_data = sensor_data.get("temperature", [])
+
+        if not temp_data:
+            return "No recent temperature data available."
+
+        latest_temp = temp_data[-1] if temp_data else None
+        if latest_temp:
+            value = latest_temp.get("value", 0)
+            unit = latest_temp.get("unit", "°C")
+            is_anomaly = latest_temp.get("is_anomaly", False)
+
+            status = "⚠️ ANOMALY" if is_anomaly else "✅ Normal"
+            return f"Latest temperature reading: {value}{unit} - {status}. Based on {len(temp_data)} readings in the last 30 minutes."
+
+        return "Unable to retrieve specific temperature information."
+
+    def get_pressure_response(self, context: Dict) -> str:
+        """Generate pressure-specific response"""
+        sensor_data = context.get("sensor_data_summary", {})
+        pressure_data = sensor_data.get("pressure", [])
+
+        if not pressure_data:
+            return "No recent pressure data available."
+
+        latest_pressure = pressure_data[-1] if pressure_data else None
+        if latest_pressure:
+            value = latest_pressure.get("value", 0)
+            unit = latest_pressure.get("unit", "kPa")
+            is_anomaly = latest_pressure.get("is_anomaly", False)
+
+            status = "⚠️ ANOMALY" if is_anomaly else "✅ Normal"
+            return f"Latest pressure reading: {value}{unit} - {status}. Based on {len(pressure_data)} readings in the last 30 minutes."
+
+        return "Unable to retrieve specific pressure information."
+
+    def get_vibration_response(self, context: Dict) -> str:
+        """Generate vibration-specific response"""
+        sensor_data = context.get("sensor_data_summary", {})
+        vib_data = sensor_data.get("vibration", [])
+
+        if not vib_data:
+            return "No recent vibration data available."
+
+        latest_vib = vib_data[-1] if vib_data else None
+        if latest_vib:
+            value = latest_vib.get("value", 0)
+            unit = latest_vib.get("unit", "mm/s")
+            is_anomaly = latest_vib.get("is_anomaly", False)
+
+            status = "⚠️ ANOMALY" if is_anomaly else "✅ Normal"
+            return f"Latest vibration reading: {value}{unit} - {status}. Based on {len(vib_data)} readings in the last 30 minutes."
+
+        return "Unable to retrieve specific vibration information."
+
+    def get_general_response(self, context: Dict) -> str:
+        """Generate general response"""
+        readings = context.get("total_readings_30min", 0)
+        anomalies = context.get("total_anomalies_30min", 0)
+
+        return f"I'm monitoring your industrial sensors in real-time. In the last 30 minutes, I've processed {readings} sensor readings with {anomalies} anomalies detected. You can ask me about specific sensors, system status, or any anomalies you're concerned about."
+
+    async def publish_to_llm(self, message: Dict):
+        """Publish message to LLM inference engine"""
+        try:
+            topic = "local/chat/requests"
+            message_json = json.dumps(message)
+
+            request = PublishToTopicRequest()
+            request.topic = topic
+            publish_message = PublishMessage()
+            publish_message.binary_message = BinaryMessage()
+            publish_message.binary_message.message = message_json.encode('utf-8')
+            request.publish_message = publish_message
+
+            operation = self.ipc_client.new_publish_to_topic()
+            operation.activate(request)
+            future = operation.get_response()
+            future.result(timeout=5.0)
+
+            logger.info("Published chat request to LLM")
+
+        except Exception as e:
+            logger.error(f"Failed to publish to LLM: {e}")
+
+    def subscribe_to_topics(self):
+        """Subscribe to sensor data and analysis topics"""
+        topics = [
+            "local/sensors/+",
+            "local/analysis/results",
+            "local/chat/responses"
+        ]
+
+        for topic in topics:
+            try:
+                request = SubscribeToTopicRequest()
+                request.topic = topic
+
+                handler = self.handle_message
+                operation = self.ipc_client.new_subscribe_to_topic(handler)
+                future = operation.activate(request)
+                future.result(timeout=10.0)
+
+                logger.info(f"Subscribed to topic: {topic}")
+
+            except Exception as e:
+                logger.error(f"Failed to subscribe to {topic}: {e}")
+
+    def handle_message(self, message: SubscriptionResponseMessage):
+        """Handle incoming MQTT messages"""
+        try:
+            topic = message.topic
+            payload = json.loads(message.binary_message.message.decode('utf-8'))
+
+            if "sensors" in topic:
+                # Store sensor data
+                self.sensor_data.append(payload)
+            elif "analysis" in topic:
+                # Store analysis results
+                self.analysis_results.append(payload)
+            elif "chat/responses" in topic:
+                # Handle LLM responses
+                asyncio.create_task(self.broadcast_message(payload))
+
+        except Exception as e:
+            logger.error(f"Error handling message: {e}")
+
+    async def start_server(self):
+        """Start the ChatBot web server"""
+        logger.info(f"Starting ChatBot UI server on port {self.web_port}")
+
+        # Subscribe to topics first
+        self.subscribe_to_topics()
+
+        # Start the web server
+        config = uvicorn.Config(
+            self.app,
+            host="0.0.0.0",
+            port=self.web_port,
+            log_level="info" if self.debug_mode else "warning"
+        )
+        server = uvicorn.Server(config)
+        await server.serve()
 
 def main():
     # Load configuration
@@ -224,7 +512,7 @@ def main():
     try:
         asyncio.run(chatbot_server.start_server())
     except KeyboardInterrupt:
-        logger.info(\"ChatBot server stopped\")
+        logger.info("ChatBot server stopped")
 
 if __name__ == '__main__':
     main()

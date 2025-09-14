@@ -1,0 +1,25 @@
+{
+  "targetArn": "arn:aws:iot:eu-central-1:533267070201:thing/EdgeLLMDemo",
+  "deploymentName": "Clean-Edge-LLM-Without-InferenceEngine",
+  "components": {
+    "aws.greengrass.Nucleus": {
+      "componentVersion": "2.15.0"
+    },
+    "aws.greengrass.labs.database.InfluxDB": {
+      "componentVersion": "2.0.0"
+    },
+    "com.edge.llm.SensorSimulator": {
+      "componentVersion": "1.0.0"
+    },
+    "com.edge.llm.ChatBotUI": {
+      "componentVersion": "1.0.0"
+    }
+  },
+  "deploymentPolicies": {
+    "failureHandlingPolicy": "ROLLBACK",
+    "componentUpdatePolicy": {
+      "timeoutInSeconds": 600,
+      "action": "NOTIFY_COMPONENTS"
+    }
+  }
+}

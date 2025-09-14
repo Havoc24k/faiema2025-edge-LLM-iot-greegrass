@@ -1,0 +1,19 @@
+{
+  "targetArn": "arn:aws:iot:eu-central-1:533267070201:thing/EdgeLLMDemo",
+  "deploymentName": "Remove-InferenceEngine-Final",
+  "components": {
+    "aws.greengrass.Nucleus": {
+      "componentVersion": "2.15.0"
+    },
+    "aws.greengrass.Cli": {
+      "componentVersion": "2.15.0"
+    }
+  },
+  "deploymentPolicies": {
+    "failureHandlingPolicy": "ROLLBACK",
+    "componentUpdatePolicy": {
+      "timeoutInSeconds": 600,
+      "action": "NOTIFY_COMPONENTS"
+    }
+  }
+}

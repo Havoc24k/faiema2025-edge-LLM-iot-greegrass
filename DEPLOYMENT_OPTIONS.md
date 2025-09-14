@@ -1,6 +1,6 @@
 # Deployment Options
 
-This project supports multiple deployment approaches, all using the **same component code** without duplication.
+This project supports **2 simplified deployment options**, both using the **same component code** without duplication.
 
 ## 🏗️ **Architecture: No Code Duplication**
 
@@ -13,10 +13,9 @@ components/                    # Single source of truth
 ├── chatbot-ui/              # Web interface
 └── telemetry-bridge/        # Data forwarding
 
-# Used by ALL deployment options:
+# Used by BOTH deployment options:
 # ✅ AWS Greengrass (production)
-# ✅ Local Docker Compose (development)
-# ✅ Local Greengrass Container (testing)
+# ✅ Local Greengrass Container (development/testing)
 ```
 
 ## 🚀 **Deployment Options**
@@ -42,28 +41,7 @@ chmod +x deploy-v2.sh
 
 ---
 
-### 2. **Local Docker Compose (Fast Development)**
-Lightweight local development with Docker containers.
-
-```bash
-docker-compose up -d
-```
-
-**Access:**
-- Grafana: http://localhost:3000
-- ChatBot: http://localhost:8080  
-- InfluxDB: http://localhost:8086
-
-**Features:**
-- ✅ **Uses existing component code directly**
-- Fast startup (~30 seconds)
-- No AWS dependencies or costs
-- Full MQTT + InfluxDB + Grafana stack
-- Perfect for component development
-
----
-
-### 3. **Local Greengrass Container (Full Simulation)**
+### 2. **Local Greengrass Container (Development/Testing)**
 Complete Greengrass runtime locally with component management.
 
 ```bash
@@ -71,7 +49,8 @@ Complete Greengrass runtime locally with component management.
 ```
 
 **Access:**
-- Same as Docker Compose option
+- Grafana: http://localhost:3000
+- ChatBot: http://localhost:8080
 - Component Server: http://localhost:8090/components/
 
 **Features:**
@@ -83,29 +62,27 @@ Complete Greengrass runtime locally with component management.
 
 ## 📊 **Comparison Matrix**
 
-| Feature | Docker Compose | Local Greengrass | AWS Greengrass |
-|---------|---------------|------------------|----------------|
-| **Setup Time** | 30 seconds | 2 minutes | 15 minutes |
-| **AWS Costs** | $0 | $0 | ~$50/month |
-| **Component Lifecycle** | Manual | ✅ Full | ✅ Full |
-| **Official AWS Components** | ❌ | ✅ | ✅ |
-| **Fleet Management** | ❌ | ❌ | ✅ |
-| **Development Speed** | ✅ Fastest | Fast | Slow |
-| **Production Parity** | Medium | ✅ High | ✅ Perfect |
+| Feature | Local Greengrass | AWS Greengrass |
+|---------|------------------|----------------|
+| **Setup Time** | 2 minutes | 15 minutes |
+| **AWS Costs** | $0 | ~$50/month |
+| **Component Lifecycle** | ✅ Full | ✅ Full |
+| **Official AWS Components** | ✅ | ✅ |
+| **Fleet Management** | ❌ | ✅ |
+| **Development Speed** | ✅ Fast | Slow |
+| **Production Parity** | ✅ High | ✅ Perfect |
 
 ## 🎯 **Recommended Usage**
 
 ### **Development Workflow**
-1. **Component Development**: Use `docker-compose up` for fastest iteration
-2. **Integration Testing**: Use `./run-local.sh` to test Greengrass lifecycle  
-3. **Production Deployment**: Use `./deploy-v2.sh` for AWS deployment
+1. **Development/Testing**: Use `./run-local.sh` for Greengrass lifecycle testing
+2. **Production Deployment**: Use `./deploy-v2.sh` for AWS deployment
 
 ### **Demo Scenarios**
-- **Quick Demo**: Docker Compose (30 sec startup)
-- **Full Demo**: Local Greengrass (shows true Greengrass capabilities)
+- **Development Demo**: Local Greengrass (shows true Greengrass capabilities)
 - **Customer Demo**: AWS Greengrass (production environment)
 
-## 🛠️ **All Features Available in Every Option**
+## 🛠️ **All Features Available in Both Options**
 
 ### ✅ **1. Dummy Sensor Data Generation**
 - 5 sensors per type (temperature, pressure, vibration)
@@ -173,16 +150,15 @@ DEBUG_MODE=true
 ```
 
 ### **Component Configuration**
-- Docker Compose: Environment variables
 - Local Greengrass: `docker/greengrass/config/config.yaml`
 - AWS Greengrass: Terraform deployment configuration
 
 ## 🏆 **Code Exterminator Results**
 
 **✅ Zero Duplication Achieved:**
-- **Removed**: 3 redundant Docker directories (76 lines eliminated)
-- **Consolidated**: All dependencies into compose commands
-- **Reused**: 100% of component code across all deployment options
-- **Maintained**: All functionality with cleaner architecture
+- **Simplified**: From 3 deployment options to 2 focused options
+- **Removed**: Standalone Docker Compose option to eliminate complexity
+- **Reused**: 100% of component code across both deployment options
+- **Maintained**: All functionality with cleaner, simpler architecture
 
 This approach perfectly embodies the frugal architecture principles: **build once, deploy anywhere, maintain simply**.

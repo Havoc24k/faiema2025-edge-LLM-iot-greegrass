@@ -10,7 +10,7 @@ services:
     componentType: "NUCLEUS"
     version: "2.12.0"
     configuration:
-      awsRegion: "us-east-1"
+      awsRegion: "eu-central-1"
       iotRoleAlias: ""
       iotDataEndpoint: ""
       iotCredEndpoint: ""
@@ -38,6 +38,10 @@ services:
       httpsEnabled: false
       bindHostname: "0.0.0.0"
       port: 1441
+  aws.greengrass.Cli:
+    componentType: "PLUGIN"
+    version: "2.12.0"
+    configuration: {}
   # Official AWS Greengrass Labs components
   aws.greengrass.labs.dashboard.InfluxDBGrafana:
     componentType: "GENERIC"
@@ -62,14 +66,6 @@ services:
       sensorCount: 5
       samplingIntervalMs: 5000
       anomalyProbability: 0.05
-  com.edge.llm.InferenceEngine:
-    componentType: "GENERIC"
-    version: "1.0.0"
-    configuration:
-      modelName: "TinyLlama-1.1B-Chat"
-      batchSize: 10
-      inferenceIntervalMs: 30000
-      temperature: 0.7
   com.edge.llm.ChatBotUI:
     componentType: "GENERIC"
     version: "1.0.0"
@@ -77,10 +73,3 @@ services:
       webPort: 8080
       chatHistoryLimit: 50
       enableDebugMode: true
-  com.edge.llm.TelemetryBridge:
-    componentType: "GENERIC"
-    version: "1.0.0"
-    configuration:
-      sensorTopics: ["local/sensors/+"]
-      analysisTopics: ["local/analysis/results"]
-      dashboardPort: 3000

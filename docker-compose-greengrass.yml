@@ -3,7 +3,7 @@ version: '3.8'
 services:
   # AWS IoT Greengrass Core running locally
   greengrass-core:
-    image: amazon/aws-iot-greengrass:2.12.0
+    build: ./docker/greengrass-build
     container_name: greengrass-local
     privileged: true
     volumes:
@@ -17,11 +17,18 @@ services:
       - ./docker/greengrass/config:/opt/config:ro
       # Shared models directory
       - greengrass-models:/opt/models
+      # AWS credentials (if available)
+      - ~/.aws:/root/.aws:ro
     environment:
       # Greengrass configuration
       - GGC_ROOT_PATH=/greengrass/v2
-      - AWS_REGION=us-east-1
-      - PROVISION=false
+      - AWS_REGION=eu-central-1
+      # AWS credentials should be provided via ~/.aws/credentials or environment
+      # - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      # - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - PROVISION=true
+      - THING_NAME=EdgeLLMDemo
+      - THING_GROUP_NAME=EdgeLLMGroup
       # Local development mode
       - GG_NUCLEUS_DOMAIN_SOCKET_FILEPATH=/greengrass/v2/ipc.socket
       - DOCKER_HOST=unix:///var/run/docker.sock
@@ -30,21 +37,15 @@ services:
       - "8883:8883"
       # Local MQTT broker (built-in)
       - "1883:1883"
-      # Grafana (via official component)
-      - "3000:3000"
       # ChatBot UI
       - "8080:8080"
-      # InfluxDB
-      - "8086:8086"
     networks:
       - greengrass-network
     restart: unless-stopped
     command: >
       sh -c "
-        echo 'Starting Greengrass in local development mode...' &&
-        mkdir -p /greengrass/v2/config &&
-        cp /opt/config/* /greengrass/v2/config/ 2>/dev/null || true &&
-        /greengrass/v2/bin/loader
+        echo 'Starting Greengrass with AWS IoT Core provisioning...' &&
+        /greengrass-entrypoint.sh
       "
 
   # Component artifact server (serves components locally)

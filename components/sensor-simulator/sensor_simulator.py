@@ -50,11 +50,10 @@ class SensorSimulator:
             'is_anomaly': is_anomaly
         }
     
-    def publish_reading(self, reading: Dict[str, Any]):
-        """Publish sensor reading to IoT Core topic"""
-        topic = f"industrial/sensors/{reading['sensor_id']}"
-        message = json.dumps(reading)
-        
+    def publish_to_topic(self, topic: str, data: Dict[str, Any]):
+        """Publish data to specified topic"""
+        message = json.dumps(data)
+
         try:
             request = PublishToTopicRequest()
             request.topic = topic
@@ -62,15 +61,20 @@ class SensorSimulator:
             publish_message.binary_message = BinaryMessage()
             publish_message.binary_message.message = message.encode('utf-8')
             request.publish_message = publish_message
-            
+
             operation = self.ipc_client.new_publish_to_topic()
             operation.activate(request)
             future = operation.get_response()
             future.result(timeout=5.0)
-            
+
             logger.info(f"Published to {topic}: {message}")
         except Exception as e:
-            logger.error(f"Failed to publish message: {e}")
+            logger.error(f"Failed to publish to {topic}: {e}")
+
+    def publish_reading(self, reading: Dict[str, Any]):
+        """Publish sensor reading to IoT Core topic"""
+        topic = f"industrial/sensors/{reading['sensor_id']}"
+        self.publish_to_topic(topic, reading)
     
     def run(self):
         """Main simulation loop"""
@@ -86,7 +90,7 @@ class SensorSimulator:
                         
                         # Also publish to local topic for Grafana
                         local_topic = f"local/sensors/{reading['sensor_id']}"
-                        self.publish_to_local_topic(local_topic, reading)
+                        self.publish_to_topic(local_topic, reading)
                 
                 time.sleep(self.sampling_interval)
                 
@@ -94,23 +98,6 @@ class SensorSimulator:
                 logger.error(f"Error in simulation loop: {e}")
                 time.sleep(5)
     
-    def publish_to_local_topic(self, topic: str, data: Dict[str, Any]):
-        """Publish to local topic for inter-component communication"""
-        try:
-            request = PublishToTopicRequest()
-            request.topic = topic
-            publish_message = PublishMessage()
-            publish_message.binary_message = BinaryMessage()
-            publish_message.binary_message.message = json.dumps(data).encode('utf-8')
-            request.publish_message = publish_message
-            
-            operation = self.ipc_client.new_publish_to_topic()
-            operation.activate(request)
-            future = operation.get_response()
-            future.result(timeout=5.0)
-            
-        except Exception as e:
-            logger.error(f"Failed to publish to local topic: {e}")
 
 def main():
     # Load configuration from Greengrass

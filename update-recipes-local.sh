@@ -24,8 +24,6 @@ update_recipe() {
 
 # Update all component recipes
 update_recipe "com.edge.llm.SensorSimulator" "components/sensor-simulator"
-update_recipe "com.edge.llm.InferenceEngine" "components/llm-inference"  
-update_recipe "com.edge.llm.TelemetryBridge" "components/telemetry-bridge"
 update_recipe "com.edge.llm.ChatBotUI" "components/chatbot-ui"
 
 echo ""

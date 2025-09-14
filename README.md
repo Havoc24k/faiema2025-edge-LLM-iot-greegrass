@@ -38,20 +38,17 @@ This project demonstrates edge-native LLM inference for industrial IoT using AWS
 
 ## Quick Start
 
-### 🚀 **Local Development (30 seconds)**
+### 🖥️ **Local Greengrass (2 minutes)**
 ```bash
-docker-compose up -d
+./run-local.sh
 ```
 Access: http://localhost:3000 (Grafana) | http://localhost:8080 (ChatBot)
 
-### 🏭 **Production AWS Deployment**
+### 🏭 **AWS Production Deployment**
 ```bash
 cd pipeline && chmod +x deploy-v2.sh && ./deploy-v2.sh
 ```
 Access: `http://<EC2_IP>:3000` (Grafana) | `http://<EC2_IP>:8080` (ChatBot)
-
-### 📋 **All Deployment Options**
-See [DEPLOYMENT_OPTIONS.md](./DEPLOYMENT_OPTIONS.md) for complete comparison
 
 ## Deployment Targets
 

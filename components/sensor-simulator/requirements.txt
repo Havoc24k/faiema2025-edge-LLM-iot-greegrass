@@ -1,1 +1,2 @@
 awsiotsdk>=1.19.0
+requests>=2.31.0

@@ -1,73 +1,25 @@
 #!/usr/bin/env python3
 
-import json
 import time
-import random
 import requests
-from datetime import datetime
+import sys
+import os
 
-def generate_sensor_data():
-    sensors = {}
-
-    # Generate temperature sensors
-    for i in range(3):
-        is_anomaly = random.random() < 0.1
-        temp = random.uniform(20, 80)
-        if is_anomaly:
-            temp = random.uniform(90, 120)
-
-        sensors[f'temperature_{i}'] = {
-            'type': 'temperature',
-            'value': round(temp, 2),
-            'unit': 'celsius',
-            'is_anomaly': is_anomaly,
-            'timestamp': datetime.utcnow().isoformat()
-        }
-
-    # Generate pressure sensors
-    for i in range(2):
-        is_anomaly = random.random() < 0.1
-        pressure = random.uniform(100, 200)
-        if is_anomaly:
-            pressure = random.uniform(250, 300)
-
-        sensors[f'pressure_{i}'] = {
-            'type': 'pressure',
-            'value': round(pressure, 2),
-            'unit': 'kPa',
-            'is_anomaly': is_anomaly,
-            'timestamp': datetime.utcnow().isoformat()
-        }
-
-    # Generate vibration sensors
-    for i in range(2):
-        is_anomaly = random.random() < 0.1
-        vibration = random.uniform(0, 10)
-        if is_anomaly:
-            vibration = random.uniform(15, 25)
-
-        sensors[f'vibration_{i}'] = {
-            'type': 'vibration',
-            'value': round(vibration, 2),
-            'unit': 'mm/s',
-            'is_anomaly': is_anomaly,
-            'timestamp': datetime.utcnow().isoformat()
-        }
-
-    return sensors
+# Add shared utilities to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'shared'))
+from sensor_utils import SensorDataGenerator
 
 def write_to_influxdb(sensor_data):
+    """Write sensor data to InfluxDB using line protocol"""
     try:
-        # Write to InfluxDB
         lines = []
         for sensor_id, data in sensor_data.items():
-            line = f"sensor_data,sensor_id={sensor_id},sensor_type={data['type']} value={data['value']},is_anomaly={data['is_anomaly']},unit=\"{data['unit']}\" {int(datetime.now().timestamp() * 1000000000)}"
+            line = f"sensor_data,sensor_id={sensor_id},sensor_type={data['type']},equipment_id=edge_device_01,location=production_floor value={data['value']},is_anomaly={data['is_anomaly']} {data['timestamp'] * 1_000_000}"
             lines.append(line)
 
-        payload = "\n".join(lines)
         response = requests.post(
             "http://influxdb:8086/write?db=sensors",
-            data=payload,
+            data="\n".join(lines),
             headers={'Content-Type': 'application/octet-stream'},
             timeout=5
         )
@@ -76,9 +28,10 @@ def write_to_influxdb(sensor_data):
         print(f"Error writing to InfluxDB: {e}")
 
 def main():
-    print("Starting simple sensor data generator...")
+    """Main sensor generation loop"""
+    print("Starting optimized sensor data generator...")
     while True:
-        sensor_data = generate_sensor_data()
+        sensor_data = SensorDataGenerator.generate_sensor_set(anomaly_rate=0.1)
         write_to_influxdb(sensor_data)
         time.sleep(5)
 

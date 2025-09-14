@@ -347,7 +347,7 @@ resource "aws_s3_bucket_versioning" "component_artifacts" {
 
 # IoT Thing for Greengrass
 resource "aws_iot_thing" "greengrass_core" {
-  name = "EdgeLLMDemoAWS-v2"
+  name = "EdgeLLMDemoAWS-Final"
 
   attributes = {
     type = "GreengrassCore"

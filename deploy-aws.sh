@@ -102,9 +102,14 @@ aws s3 cp components/sensor-simulator/requirements.txt "s3://$S3_BUCKET/com.edge
 echo "Uploading shared sensor utilities..."
 aws s3 cp components/shared/sensor_utils.py "s3://$S3_BUCKET/com.edge.llm.SensorSimulator/$SENSOR_VERSION/" --region "$AWS_REGION"
 
-# Upload Grafana dashboard
-echo "Uploading Grafana dashboard configuration..."
-aws s3 cp grafana-dashboards/edge-llm-dashboard.json "s3://$S3_BUCKET/grafana-dashboards/" --region "$AWS_REGION"
+# Upload Grafana component
+echo "Uploading Grafana component..."
+GRAFANA_VERSION="1.0.15"
+cd components/grafana
+tar -czf provisioning.tar.gz provisioning/
+aws s3 cp provisioning.tar.gz "s3://$S3_BUCKET/com.edge.llm.Grafana/$GRAFANA_VERSION/" --region "$AWS_REGION"
+rm provisioning.tar.gz
+cd ../..
 
 echo "Component artifacts uploaded to S3!"
 echo ""
@@ -114,12 +119,28 @@ echo "Step 4: Registering components in AWS IoT Greengrass..."
 
 # Update existing recipe files with correct S3 URIs
 echo "Updating ChatBot UI recipe with S3 URLs..."
-sed "s|s3://[^/]*/|s3://$S3_BUCKET/|g" components/chatbot-ui/recipe-v1.0.8.json > /tmp/chatbot-recipe.json
+sed "s|s3://[^/]*/|s3://$S3_BUCKET/|g" components/chatbot-ui/recipe.json > /tmp/chatbot-recipe.json
 
 echo "Updating Sensor Simulator recipe with S3 URLs..."
 sed "s|s3://[^/]*/|s3://$S3_BUCKET/|g" components/sensor-simulator/recipe.json > /tmp/sensor-recipe.json
 
+echo "Preparing InfluxDB recipe..."
+cp components/influxdb/recipe.json /tmp/influxdb-recipe.json
+
+echo "Updating Grafana recipe with S3 URLs..."
+sed "s|s3://[^/]*/|s3://$S3_BUCKET/|g" components/grafana/recipe.json > /tmp/grafana-recipe.json
+
 # Create components in Greengrass using existing recipe files
+echo "Creating InfluxDB component..."
+aws greengrassv2 create-component-version \
+    --inline-recipe fileb:///tmp/influxdb-recipe.json \
+    --region "$AWS_REGION" || echo "Component might already exist, continuing..."
+
+echo "Creating Grafana component..."
+aws greengrassv2 create-component-version \
+    --inline-recipe fileb:///tmp/grafana-recipe.json \
+    --region "$AWS_REGION" || echo "Component might already exist, continuing..."
+
 echo "Creating ChatBot UI component..."
 aws greengrassv2 create-component-version \
     --inline-recipe fileb:///tmp/chatbot-recipe.json \
@@ -135,46 +156,6 @@ echo ""
 
 # Step 5: Install Greengrass on EC2
 echo "Step 5: Installing Greengrass Core on EC2..."
-
-# Install InfluxDB 1.8
-echo "Installing InfluxDB 1.8..."
-ssh -i ~/.ssh/greengrass-key -o StrictHostKeyChecking=no ec2-user@"$EC2_PUBLIC_IP" << 'EOF'
-sudo tee /etc/yum.repos.d/influxdb.repo << 'INFLUX_REPO'
-[influxdb]
-name = InfluxDB Repository - RHEL
-baseurl = https://repos.influxdata.com/rhel/$releasever/$basearch/stable
-enabled = 1
-gpgcheck = 1
-gpgkey = https://repos.influxdata.com/influxdb.key
-INFLUX_REPO
-
-sudo yum install -y influxdb
-sudo systemctl start influxdb
-sudo systemctl enable influxdb
-
-# Create database and user
-sleep 5
-influx -execute "CREATE DATABASE sensors"
-influx -execute "CREATE USER admin WITH PASSWORD 'admin123' WITH ALL PRIVILEGES"
-EOF
-
-# Install Grafana
-echo "Installing Grafana..."
-ssh -i ~/.ssh/greengrass-key -o StrictHostKeyChecking=no ec2-user@"$EC2_PUBLIC_IP" << 'EOF'
-sudo tee /etc/yum.repos.d/grafana.repo << 'GRAFANA_REPO'
-[grafana]
-name=grafana
-baseurl=https://rpm.grafana.com
-repo_gpgcheck=1
-enabled=1
-gpgcheck=1
-gpgkey=https://rpm.grafana.com/gpg.key
-GRAFANA_REPO
-
-sudo yum install -y grafana
-sudo systemctl start grafana-server
-sudo systemctl enable grafana-server
-EOF
 
 # Install Greengrass
 echo "Installing Greengrass Core..."
@@ -196,35 +177,18 @@ echo "Starting Greengrass service..."
 ssh -i ~/.ssh/greengrass-key -o StrictHostKeyChecking=no ec2-user@"$EC2_PUBLIC_IP" \
     "sudo systemctl start greengrass && sudo systemctl enable greengrass"
 
-# Configure Grafana dashboard
-echo "Configuring Grafana dashboard..."
+# Add ggc_user to docker group for InfluxDB component
+echo "Adding ggc_user to docker group for InfluxDB component..."
 ssh -i ~/.ssh/greengrass-key -o StrictHostKeyChecking=no ec2-user@"$EC2_PUBLIC_IP" \
-    "aws s3 cp s3://$S3_BUCKET/grafana-dashboards/edge-llm-dashboard.json /tmp/dashboard.json"
+    "sudo usermod -aG docker ggc_user"
 
+# Restart Greengrass to apply group membership changes
+echo "Restarting Greengrass to apply docker group membership..."
 ssh -i ~/.ssh/greengrass-key -o StrictHostKeyChecking=no ec2-user@"$EC2_PUBLIC_IP" \
-    "sudo cp /tmp/dashboard.json /etc/grafana/provisioning/dashboards/"
+    "sudo systemctl restart greengrass"
 
-ssh -i ~/.ssh/greengrass-key -o StrictHostKeyChecking=no ec2-user@"$EC2_PUBLIC_IP" << 'EOF'
-sudo tee /etc/grafana/provisioning/dashboards/edge-llm.yaml << 'DASHBOARD_CONFIG'
-apiVersion: 1
-
-providers:
-  - name: 'Edge LLM IoT'
-    orgId: 1
-    folder: ''
-    type: file
-    disableDeletion: false
-    updateIntervalSeconds: 10
-    allowUiUpdates: true
-    options:
-      path: /etc/grafana/provisioning/dashboards
-DASHBOARD_CONFIG
-
-sudo systemctl restart grafana-server
-EOF
-
-echo "Waiting for Greengrass to be fully ready..."
-sleep 30
+echo "Waiting for Greengrass to be fully ready after restart..."
+sleep 45
 
 # Step 6: Wait for Greengrass Thing Group to be created
 echo "Step 6: Waiting for IoT Thing Group to be created by Greengrass..."
@@ -253,6 +217,15 @@ cat > /tmp/deployment.json <<EOF
     "aws.greengrass.Nucleus": {
       "componentVersion": "2.12.6"
     },
+    "aws.greengrass.DockerApplicationManager": {
+      "componentVersion": "2.0.11"
+    },
+    "com.edge.llm.InfluxDB": {
+      "componentVersion": "1.0.0"
+    },
+    "com.edge.llm.Grafana": {
+      "componentVersion": "1.0.15"
+    },
     "com.edge.llm.ChatBotUI": {
       "componentVersion": "$CHATBOT_VERSION",
       "configurationUpdate": {
@@ -267,7 +240,7 @@ cat > /tmp/deployment.json <<EOF
     }
   },
   "deploymentPolicies": {
-    "failureHandlingPolicy": "ROLLBACK",
+    "failureHandlingPolicy": "DO_NOTHING",
     "componentUpdatePolicy": {
       "timeoutInSeconds": 900,
       "action": "NOTIFY_COMPONENTS"
@@ -302,9 +275,11 @@ echo "========================================="
 echo ""
 echo "Access your services at:"
 echo "  🤖 ChatBot UI (CodeLlama-7B): http://$EC2_PUBLIC_IP:8080"
-echo "  📊 Grafana Dashboard: http://$EC2_PUBLIC_IP:3000 (admin/admin)"
-echo "  💾 InfluxDB UI: http://$EC2_PUBLIC_IP:8086 (admin/admin123)"
+echo "  📊 Grafana Dashboard: http://$EC2_PUBLIC_IP:3000 (admin/admin) - Running as Greengrass Component"
+echo "  💾 InfluxDB UI: http://$EC2_PUBLIC_IP:8086 (admin/admin123) - Running as Greengrass Component"
 echo "  🔌 SSH Access: ssh -i ~/.ssh/greengrass-key ec2-user@$EC2_PUBLIC_IP"
+echo ""
+echo "Note: InfluxDB and Grafana now run as Greengrass components in Docker containers for better lifecycle management."
 echo ""
 echo "System Status Commands:"
 echo "  Check components: aws greengrassv2 list-core-devices --region $AWS_REGION"
@@ -313,6 +288,9 @@ echo ""
 echo "Troubleshooting Commands:"
 echo "  Component logs: ssh -i ~/.ssh/greengrass-key ec2-user@$EC2_PUBLIC_IP 'sudo tail -f /greengrass/v2/logs/com.edge.llm.*.log'"
 echo "  Greengrass status: ssh -i ~/.ssh/greengrass-key ec2-user@$EC2_PUBLIC_IP 'sudo systemctl status greengrass'"
+echo "  InfluxDB container: ssh -i ~/.ssh/greengrass-key ec2-user@$EC2_PUBLIC_IP 'sudo docker ps --filter name=greengrass-influxdb'"
+echo "  Grafana container: ssh -i ~/.ssh/greengrass-key ec2-user@$EC2_PUBLIC_IP 'sudo docker ps --filter name=greengrass-grafana'"
+echo "  All containers: ssh -i ~/.ssh/greengrass-key ec2-user@$EC2_PUBLIC_IP 'sudo docker ps'"
 echo "  GPU usage: ssh -i ~/.ssh/greengrass-key ec2-user@$EC2_PUBLIC_IP 'nvidia-smi'"
 echo ""
 echo "Try asking the ChatBot:"

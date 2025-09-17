@@ -18,7 +18,7 @@ def write_to_influxdb(sensor_data):
             lines.append(line)
 
         response = requests.post(
-            "http://influxdb:8086/write?db=sensors",
+            "http://localhost:8086/write?db=sensors",
             data="\n".join(lines),
             headers={'Content-Type': 'application/octet-stream'},
             timeout=5

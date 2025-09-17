@@ -4,6 +4,11 @@
   "ComponentVersion": "1.0.1",
   "ComponentDescription": "Industrial sensor data simulator",
   "ComponentPublisher": "EdgeLLM",
+  "ComponentDependencies": {
+    "com.edge.llm.InfluxDB": {
+      "VersionRequirement": "~1.0.0"
+    }
+  },
   "ComponentConfiguration": {
     "DefaultConfiguration": {
       "sensorCount": 5,

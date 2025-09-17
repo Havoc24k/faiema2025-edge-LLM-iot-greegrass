@@ -1,0 +1,30 @@
+{
+  "RecipeFormatVersion": "2020-01-25",
+  "ComponentName": "com.edge.llm.InfluxDB",
+  "ComponentVersion": "1.0.0",
+  "ComponentDescription": "InfluxDB 1.8 time-series database for sensor data storage",
+  "ComponentPublisher": "EdgeLLM",
+  "ComponentDependencies": {
+    "aws.greengrass.DockerApplicationManager": {
+      "VersionRequirement": "~2.0.0"
+    }
+  },
+  "Manifests": [
+    {
+      "Platform": {
+        "os": "linux"
+      },
+      "Lifecycle": {
+        "Install": {
+          "Script": "docker pull influxdb:1.8-alpine"
+        },
+        "Run": {
+          "Script": "docker run --name greengrass-influxdb --rm -p 8086:8086 -v /greengrass/v2/work/com.edge.llm.InfluxDB/data:/var/lib/influxdb -e INFLUXDB_DB=sensors -e INFLUXDB_ADMIN_USER=admin -e INFLUXDB_ADMIN_PASSWORD=admin123 -e INFLUXDB_HTTP_AUTH_ENABLED=false influxdb:1.8-alpine"
+        },
+        "Shutdown": {
+          "Script": "docker stop greengrass-influxdb || true"
+        }
+      }
+    }
+  ]
+}

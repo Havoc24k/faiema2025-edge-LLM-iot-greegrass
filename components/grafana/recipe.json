@@ -1,0 +1,35 @@
+{
+  "RecipeFormatVersion": "2020-01-25",
+  "ComponentName": "com.edge.llm.Grafana",
+  "ComponentVersion": "1.0.15",
+  "ComponentDescription": "Grafana visualization dashboard for sensor data monitoring",
+  "ComponentPublisher": "EdgeLLM",
+  "ComponentDependencies": {
+    "aws.greengrass.DockerApplicationManager": {
+      "VersionRequirement": "~2.0.0"
+    },
+    "com.edge.llm.InfluxDB": {
+      "VersionRequirement": "~1.0.0"
+    }
+  },
+  "Manifests": [
+    {
+      "Platform": {
+        "os": "linux"
+      },
+      "Lifecycle": {
+        "Run": {
+          "Script": "docker pull grafana/grafana:latest && docker volume create grafana-provisioning && docker volume create grafana-data && docker run --rm -v grafana-provisioning:/tmp/provisioning -v {artifacts:path}:/tmp/artifacts alpine sh -c 'cd /tmp/artifacts && tar -xzf provisioning.tar.gz -C /tmp/provisioning --strip-components=1' && docker run --name greengrass-grafana --rm --network host -v grafana-provisioning:/etc/grafana/provisioning -v grafana-data:/var/lib/grafana -e GF_SECURITY_ADMIN_USER=admin -e GF_SECURITY_ADMIN_PASSWORD=admin -e GF_USERS_ALLOW_SIGN_UP=false grafana/grafana:latest"
+        },
+        "Shutdown": {
+          "Script": "docker stop greengrass-grafana || true"
+        }
+      },
+      "Artifacts": [
+        {
+          "URI": "s3://edge-llm-greengrass-artifacts-533267070201/com.edge.llm.Grafana/1.0.15/provisioning.tar.gz"
+        }
+      ]
+    }
+  ]
+}

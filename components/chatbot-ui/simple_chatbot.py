@@ -258,25 +258,41 @@ class EdgeLLMChatBot:
         """Use Qwen to generate appropriate InfluxDB query based on user intent"""
         if not self.model_loaded:
             # Fallback to simple query if model not loaded
-            return "SELECT * FROM sensor_data ORDER BY time DESC LIMIT 50"
+            return "SELECT * FROM sensor_data WHERE vessel_id = 'MV_FAIEMA_2025' ORDER BY time DESC LIMIT 50"
 
         try:
             schema_info = """
 Database: sensors
 Table: sensor_data
+Vessel: MV FAIEMA 2025 Maritime Vessel
+
 Columns:
 - time: timestamp
-- sensor_id: string (e.g., "temperature_0", "pressure_1", "vibration_2")
-- sensor_type: string ("temperature", "pressure", "vibration")
+- sensor_id: string (e.g., "engine_cylinder_temp_01", "oil_pressure_02", "cargo_temperature_03")
+- sensor_type: string (maritime sensor types)
 - value: float (sensor reading)
-- unit: string ("celsius", "kPa", "mm/s")
+- unit: string (sensor unit)
 - is_anomaly: boolean (true/false)
+- vessel_id: string ("MV_FAIEMA_2025")
+- location: string ("engine_room", "cargo_hold", "general")
 
+Maritime Sensor Types:
+Engine Room: engine_cylinder_temp, oil_pressure, oil_temperature, fuel_flow_rate, fuel_pressure, vibration_main, shaft_torque, shaft_rpm, bilge_level
+Cargo Hold: cargo_temperature, cargo_humidity, o2_level, co2_level, ch4_level, cargo_weight, motion_sensor, water_ingress
+Safety: fire_detector, smoke_detector
+
+EXAMPLE QUERIES (copy format exactly):
+- Engine temp status: SELECT MEAN(value), MAX(value), MIN(value) FROM sensor_data WHERE sensor_type = 'engine_cylinder_temp' AND vessel_id = 'MV_FAIEMA_2025' AND time > now() - 10m
+- Recent oil pressure: SELECT value, time FROM sensor_data WHERE sensor_type = 'oil_pressure' AND vessel_id = 'MV_FAIEMA_2025' ORDER BY time DESC LIMIT 10
+- All recent sensors: SELECT * FROM sensor_data WHERE vessel_id = 'MV_FAIEMA_2025' ORDER BY time DESC LIMIT 50
+
+Always use vessel_id = 'MV_FAIEMA_2025' in WHERE clauses.
 Common time filters:
 - now() - 5m (last 5 minutes)
-- now() - 10m (last 10 minutes)
 - now() - 1h (last hour)
 - now() - 24h (last day)
+
+Always use vessel_id = 'MV_FAIEMA_2025' in WHERE clauses.
 """
 
             messages = [
@@ -314,7 +330,7 @@ Rules:
             with torch.no_grad():
                 outputs = self.model.generate(
                     **inputs,
-                    max_new_tokens=100,
+                    max_new_tokens=256,
                     temperature=0.1,
                     do_sample=True,
                     top_p=0.9
@@ -348,19 +364,29 @@ Rules:
     def get_sensor_data(self, user_query: str = "") -> Dict[str, Any]:
         """Get sensor data from InfluxDB 1.8 using InfluxQL with LLM-generated queries"""
         try:
-            # Generate appropriate query using Qwen based on user intent
-            if user_query:
-                influx_query = self.generate_influxdb_query_with_llm(user_query)
-                logger.info("LLM generated InfluxDB query: %s", influx_query)
-            else:
-                influx_query = "SELECT * FROM sensor_data ORDER BY time DESC LIMIT 50"
+            # TEMPORARY WORKAROUND: Use hardcoded query for all maritime sensor data
+            # Comment out LLM query generation for now
+            # if user_query:
+            #     influx_query = self.generate_influxdb_query_with_llm(user_query)
+            #     logger.info("LLM generated InfluxDB query: %s", influx_query)
+            # else:
+            #     influx_query = "SELECT * FROM sensor_data ORDER BY time DESC LIMIT 50"
+
+            # Hardcoded query: all sensor data grouped by sensor type for last 12 hours
+            influx_query = "SELECT MEAN(value), MAX(value), MIN(value), COUNT(value) FROM sensor_data WHERE vessel_id = 'MV_FAIEMA_2025' AND time > now() - 12h GROUP BY sensor_type"
+            logger.info("Using hardcoded InfluxDB query: %s", influx_query)
 
             params = {
                 'db': 'sensors',
                 'q': influx_query
             }
+            headers = {
+                'Authorization': f'Token {self.influxdb_token}'
+            }
 
-            response = requests.get(f"{self.influxdb_url}/query", params=params, timeout=10)
+            logger.debug("Making InfluxDB request: URL=%s, params=%s", f"{self.influxdb_url}/query", params)
+            response = requests.get(f"{self.influxdb_url}/query", params=params, headers=headers, timeout=10)
+            logger.debug("InfluxDB response: status=%d, content=%s", response.status_code, response.text[:500])
 
             if response.status_code == 200:
                 result = self.parse_influxql_response(response.json())
@@ -460,40 +486,89 @@ Rules:
         return unit_map.get(sensor_type, 'unknown')
 
     def analyze_query(self, query: str) -> str:
-        """Process user query with LLM using sensor data"""
+        """Process user query with sensor data analysis"""
         sensor_data = self.get_sensor_data(query)
 
         if "error" in sensor_data:
-            logger.error("Failed to get sensor data: %s", sensor_data["error"])
-            return f"ERROR: Cannot access InfluxDB sensor data. {sensor_data['error']}. Please check InfluxDB configuration."
+            error_msg = sensor_data["error"]
+            logger.error("Failed to get sensor data: %s", error_msg)
+            return f"ERROR: Cannot access InfluxDB sensor data. {error_msg}. Please check InfluxDB configuration."
 
+        # Use LLM to analyze sensor data
         if self.model_loaded:
             return self.generate_llm_response(query, sensor_data)
         else:
-            logger.error("LLM model not loaded")
             return "Sorry, the AI model is not available. Please try again later."
+
+    def analyze_maritime_sensors(self, query: str, sensor_data: Dict[str, Any]) -> str:
+        """Simple rule-based analysis for maritime operational questions"""
+        sensors = sensor_data.get('sensors', {})
+        if not sensors:
+            return "No sensor data available for analysis."
+
+        query_lower = query.lower()
+
+        # Engine cylinder temperature analysis
+        if 'engine' in query_lower and 'cylinder' in query_lower and 'temperature' in query_lower:
+            engine_temps = []
+            for sensor_id, sensor in sensors.items():
+                if sensor.get('type') == 'engine_cylinder_temp':
+                    temp_value = sensor.get('value', 0)
+                    engine_temps.append(temp_value)
+
+            if engine_temps:
+                avg_temp = sum(engine_temps) / len(engine_temps)
+                max_temp = max(engine_temps)
+                min_temp = min(engine_temps)
+
+                if avg_temp <= 450:
+                    status = "NORMAL" if avg_temp >= 300 else "LOW"
+                elif avg_temp <= 500:
+                    status = "WARNING"
+                else:
+                    status = "CRITICAL"
+
+                return f"Engine Cylinder Temperature Status: {status}\n" \
+                       f"Average: {avg_temp:.1f}°C (Normal: 300-450°C)\n" \
+                       f"Range: {min_temp:.1f}°C to {max_temp:.1f}°C\n" \
+                       f"Found {len(engine_temps)} engine cylinder sensors."
+            else:
+                return "No engine cylinder temperature sensors found in the current data."
+
+        # General sensor overview
+        sensor_types = {}
+        for sensor in sensors.values():
+            sensor_type = sensor.get('type', 'unknown')
+            if sensor_type not in sensor_types:
+                sensor_types[sensor_type] = []
+            sensor_types[sensor_type].append(sensor.get('value', 0))
+
+        summary = f"Maritime Vessel Sensor Summary (MV FAIEMA 2025):\n"
+        for sensor_type, values in sensor_types.items():
+            if values:
+                avg_val = sum(values) / len(values)
+                summary += f"- {sensor_type}: {len(values)} sensors, avg {avg_val:.1f}\n"
+
+        return summary
 
     def generate_llm_response(self, query: str, sensor_data: Dict[str, Any]) -> str:
         """Generate response using Qwen2.5-Coder with sensor data context"""
         try:
-            # Create context with structured sensor data
-            sensor_json = json.dumps(sensor_data.get('sensors', {}), indent=2)
+            # Create sensor summary for LLM
             sensors_summary = self.create_sensor_summary(sensor_data)
 
-            # Qwen2.5 chat format
+            # Simplified prompt for cleaner responses
             messages = [
-                {"role": "system", "content": f"""You are an industrial IoT data analyst. You analyze JSON sensor data to answer questions.
+                {"role": "system", "content": f"""You are a maritime IoT analyst for MV FAIEMA 2025. Answer questions about sensor data.
 
-CURRENT SENSOR DATA (JSON):
-{sensor_json}
+SENSOR DATA: {sensors_summary}
 
-SUMMARY: {sensors_summary}
+OPERATIONAL LIMITS:
+- Engine Cylinder Temperature: Normal 300-450°C, Warning >450°C, Critical >500°C
+- Oil Pressure: Normal 300-500 kPa, Low <300 kPa, Critical <200 kPa
+- Vibration: Normal <5 m/s, Warning 5-8 m/s, Critical >8 m/s
 
-Instructions:
-1. Analyze the JSON data above to answer the user's question
-2. For calculations (averages, counts, etc), compute from the actual values
-3. Reference specific sensor IDs and values in your response
-4. Be precise and concise"""},
+Answer in plain English. Be direct and concise."""},
                 {"role": "user", "content": query}
             ]
 
@@ -516,7 +591,7 @@ Instructions:
             with torch.no_grad():
                 outputs = self.model.generate(
                     **inputs,
-                    max_new_tokens=200,
+                    max_new_tokens=256,
                     temperature=0.7,
                     do_sample=True,
                     top_p=0.9,

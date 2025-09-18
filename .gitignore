@@ -39,3 +39,9 @@ terraform.rc
 # GenAI
 .claude
 CLAUDE.md
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd

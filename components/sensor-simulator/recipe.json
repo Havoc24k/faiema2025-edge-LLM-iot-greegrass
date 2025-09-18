@@ -1,8 +1,8 @@
 {
   "RecipeFormatVersion": "2020-01-25",
   "ComponentName": "com.edge.llm.SensorSimulator",
-  "ComponentVersion": "1.0.1",
-  "ComponentDescription": "Industrial sensor data simulator",
+  "ComponentVersion": "1.0.2",
+  "ComponentDescription": "Maritime vessel sensor data simulator for MV FAIEMA 2025",
   "ComponentPublisher": "EdgeLLM",
   "ComponentDependencies": {
     "com.edge.llm.InfluxDB": {
@@ -44,13 +44,13 @@
       },
       "Artifacts": [
         {
-          "URI": "s3://edge-llm-greengrass-artifacts-533267070201/com.edge.llm.SensorSimulator/1.0.1/simple_sensor_gen.py"
+          "URI": "s3://edge-llm-greengrass-artifacts-533267070201/com.edge.llm.SensorSimulator/1.0.2/simple_sensor_gen.py"
         },
         {
-          "URI": "s3://edge-llm-greengrass-artifacts-533267070201/com.edge.llm.SensorSimulator/1.0.1/requirements.txt"
+          "URI": "s3://edge-llm-greengrass-artifacts-533267070201/com.edge.llm.SensorSimulator/1.0.2/requirements.txt"
         },
         {
-          "URI": "s3://edge-llm-greengrass-artifacts-533267070201/com.edge.llm.SensorSimulator/1.0.1/sensor_utils.py"
+          "URI": "s3://edge-llm-greengrass-artifacts-533267070201/com.edge.llm.SensorSimulator/1.0.2/sensor_utils.py"
         }
       ]
     }

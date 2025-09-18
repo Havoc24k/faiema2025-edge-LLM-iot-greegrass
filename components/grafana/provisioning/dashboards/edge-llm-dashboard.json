@@ -113,12 +113,28 @@
             {
               "key": "sensor_type",
               "operator": "=",
-              "value": "temperature"
+              "value": "engine_cylinder_temp"
+            },
+            {
+              "condition": "AND",
+              "key": "vessel_id",
+              "operator": "=",
+              "value": "MV_FAIEMA_2025"
+            }
+          ],
+          "groupBy": [
+            {
+              "params": ["$__interval"],
+              "type": "time"
+            },
+            {
+              "params": ["null"],
+              "type": "fill"
             }
           ]
         }
       ],
-      "title": "Temperature Sensors",
+      "title": "Engine Cylinder Temperatures",
       "type": "timeseries"
     },
     {
@@ -216,12 +232,28 @@
             {
               "key": "sensor_type",
               "operator": "=",
-              "value": "pressure"
+              "value": "oil_pressure"
+            },
+            {
+              "condition": "AND",
+              "key": "vessel_id",
+              "operator": "=",
+              "value": "MV_FAIEMA_2025"
+            }
+          ],
+          "groupBy": [
+            {
+              "params": ["$__interval"],
+              "type": "time"
+            },
+            {
+              "params": ["null"],
+              "type": "fill"
             }
           ]
         }
       ],
-      "title": "Pressure Sensors",
+      "title": "Oil Pressure Sensors",
       "type": "timeseries"
     },
     {
@@ -323,90 +355,36 @@
             {
               "key": "sensor_type",
               "operator": "=",
-              "value": "vibration"
+              "value": "vibration_main"
+            },
+            {
+              "condition": "AND",
+              "key": "vessel_id",
+              "operator": "=",
+              "value": "MV_FAIEMA_2025"
+            }
+          ],
+          "groupBy": [
+            {
+              "params": ["$__interval"],
+              "type": "time"
+            },
+            {
+              "params": ["null"],
+              "type": "fill"
             }
           ]
         }
       ],
-      "title": "Vibration Sensors",
+      "title": "Main Engine Vibration",
       "type": "timeseries"
-    },
-    {
-      "datasource": "InfluxDB",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 8
-      },
-      "id": 5,
-      "options": {
-        "orientation": "auto",
-        "reduceOptions": {
-          "values": false,
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": ""
-        },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true,
-        "text": {}
-      },
-      "pluginVersion": "8.0.0",
-      "targets": [
-        {
-          "datasource": "InfluxDB",
-          "measurement": "sensor_data",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "refId": "A",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": ["is_anomaly"],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": []
-        }
-      ],
-      "title": "Anomaly Detection Status",
-      "type": "gauge"
     }
   ],
   "refresh": "5s",
+  "liveNow": true,
   "schemaVersion": 27,
   "style": "dark",
-  "tags": ["edge-llm", "iot", "sensors"],
+  "tags": ["maritime", "vessel", "faiema2025", "sensors"],
   "templating": {
     "list": []
   },
@@ -416,7 +394,7 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "Edge LLM IoT Dashboard",
+  "title": "MV FAIEMA 2025 - Maritime Vessel Dashboard",
   "uid": "edge-llm-iot",
   "version": 1
 }

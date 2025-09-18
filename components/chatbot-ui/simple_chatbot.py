@@ -23,24 +23,25 @@ class EdgeLLMChatBot:
 
         logger.info("ChatBot connecting to InfluxDB at: %s", self.influxdb_url)
         logger.info("InfluxDB config - Org: %s, Bucket: %s", self.influxdb_org, self.influxdb_bucket)
-        logger.info("Loading CodeLlama-7B (optimized for structured data analysis)...")
+        logger.info("Loading Qwen2.5-Coder-3B-Instruct (optimized for JSON and structured data analysis)...")
 
-        # Initialize CodeLlama - better for structured data understanding
-        self.model_name = "codellama/CodeLlama-7b-Instruct-hf"
+        # Initialize Qwen2.5-Coder 3B - faster and more efficient for edge deployment
+        self.model_name = "Qwen/Qwen2.5-Coder-3B-Instruct"
         try:
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, trust_remote_code=True)
             # Use GPU if available, fallback to CPU
             device = "cuda" if torch.cuda.is_available() else "cpu"
             logger.info("Using device: %s", device)
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_name,
                 torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-                device_map="auto" if device == "cuda" else "cpu"
+                device_map="auto" if device == "cuda" else "cpu",
+                trust_remote_code=True
             )
             # Add pad token if needed
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
-            logger.info("Successfully loaded CodeLlama model")
+            logger.info("Successfully loaded Qwen2.5-Coder-3B model")
             self.model_loaded = True
         except Exception as e:
             logger.error("Failed to load model: %s", e)
@@ -253,19 +254,118 @@ class EdgeLLMChatBot:
                 logger.error("Error processing chat request: %s", e)
                 return jsonify({'error': 'Internal server error'}), 500
 
-    def get_sensor_data(self) -> Dict[str, Any]:
-        """Get sensor data from InfluxDB 1.8 using InfluxQL"""
+    def generate_influxdb_query_with_llm(self, user_query: str) -> str:
+        """Use Qwen to generate appropriate InfluxDB query based on user intent"""
+        if not self.model_loaded:
+            # Fallback to simple query if model not loaded
+            return "SELECT * FROM sensor_data ORDER BY time DESC LIMIT 50"
+
         try:
-            # Query InfluxDB 1.8 using InfluxQL
+            schema_info = """
+Database: sensors
+Table: sensor_data
+Columns:
+- time: timestamp
+- sensor_id: string (e.g., "temperature_0", "pressure_1", "vibration_2")
+- sensor_type: string ("temperature", "pressure", "vibration")
+- value: float (sensor reading)
+- unit: string ("celsius", "kPa", "mm/s")
+- is_anomaly: boolean (true/false)
+
+Common time filters:
+- now() - 5m (last 5 minutes)
+- now() - 10m (last 10 minutes)
+- now() - 1h (last hour)
+- now() - 24h (last day)
+"""
+
+            messages = [
+                {"role": "system", "content": f"""You are an InfluxDB query generator. Convert user questions into InfluxQL queries.
+
+{schema_info}
+
+Rules:
+1. Always use InfluxQL syntax (not SQL)
+2. Use time filters for recent data queries
+3. Use GROUP BY for aggregations
+4. Return ONLY the InfluxQL query, no explanation
+5. Common patterns:
+   - Averages: SELECT MEAN(value) FROM sensor_data WHERE time > now() - 10m AND sensor_type='temperature'
+   - Counts: SELECT COUNT(*) FROM sensor_data WHERE time > now() - 10m
+   - Recent data: SELECT * FROM sensor_data WHERE time > now() - 5m ORDER BY time DESC LIMIT 20
+   - Anomalies: SELECT * FROM sensor_data WHERE is_anomaly=true AND time > now() - 10m"""},
+                {"role": "user", "content": f"Generate InfluxQL query for: {user_query}"}
+            ]
+
+            # Apply chat template for Qwen
+            inputs = self.tokenizer.apply_chat_template(
+                messages,
+                add_generation_prompt=True,
+                tokenize=True,
+                return_dict=True,
+                return_tensors="pt",
+                max_length=1024,
+                truncation=True
+            )
+
+            # Move inputs to device
+            inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
+
+            with torch.no_grad():
+                outputs = self.model.generate(
+                    **inputs,
+                    max_new_tokens=100,
+                    temperature=0.1,
+                    do_sample=True,
+                    top_p=0.9
+                )
+
+            # Decode the generated query
+            generated_query = self.tokenizer.decode(outputs[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True).strip()
+
+            # Clean up the query - remove any explanations, just get the SQL
+            lines = generated_query.split('\n')
+            for line in lines:
+                line = line.strip()
+                if line.upper().startswith('SELECT'):
+                    logger.info("LLM generated query: %s", line)
+                    return line
+
+            # If no SELECT found, return the first non-empty line
+            for line in lines:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    logger.info("LLM generated query: %s", line)
+                    return line
+
+            logger.warning("Could not extract query from LLM response: %s", generated_query)
+            return "SELECT * FROM sensor_data ORDER BY time DESC LIMIT 50"
+
+        except Exception as e:
+            logger.error("Error generating query with LLM: %s", e)
+            return "SELECT * FROM sensor_data ORDER BY time DESC LIMIT 50"
+
+    def get_sensor_data(self, user_query: str = "") -> Dict[str, Any]:
+        """Get sensor data from InfluxDB 1.8 using InfluxQL with LLM-generated queries"""
+        try:
+            # Generate appropriate query using Qwen based on user intent
+            if user_query:
+                influx_query = self.generate_influxdb_query_with_llm(user_query)
+                logger.info("LLM generated InfluxDB query: %s", influx_query)
+            else:
+                influx_query = "SELECT * FROM sensor_data ORDER BY time DESC LIMIT 50"
+
             params = {
                 'db': 'sensors',
-                'q': "SELECT * FROM sensor_data ORDER BY time DESC LIMIT 50"
+                'q': influx_query
             }
 
             response = requests.get(f"{self.influxdb_url}/query", params=params, timeout=10)
 
             if response.status_code == 200:
-                return self.parse_influxql_response(response.json())
+                result = self.parse_influxql_response(response.json())
+                logger.info("Retrieved %d sensor records", len(result.get('sensors', {})))
+                return result
             else:
                 logger.error("InfluxDB query failed: %d - %s", response.status_code, response.text)
                 return {"error": f"InfluxDB query failed: {response.status_code}"}
@@ -295,25 +395,51 @@ class EdgeLLMChatBot:
 
             sensors = {}
 
-            # Parse sensor data efficiently
-            for serie in series:
+            # Parse sensor data efficiently - handle both individual and aggregated data
+            for serie_idx, serie in enumerate(series):
                 columns = serie.get('columns', [])
                 values = serie.get('values', [])
+                tags = serie.get('tags', {})
+
+                # Check if this is an aggregation result
+                has_sensor_id = 'sensor_id' in columns
+                is_aggregation = any(col in ['mean', 'max', 'min', 'count', 'sum'] for col in columns)
 
                 for i, value_row in enumerate(values):
                     if len(value_row) == len(columns):
                         row_data = dict(zip(columns, value_row))
-                        sensor_id = row_data.get('sensor_id', f'sensor_{i}')
 
-                        sensors[sensor_id] = {
-                            'id': sensor_id,
-                            'type': row_data.get('sensor_type', 'unknown'),
-                            'value': float(row_data.get('value', 0)),
-                            'timestamp': row_data.get('time', ''),
-                            'equipment_id': row_data.get('equipment_id', 'unknown'),
-                            'location': row_data.get('location', 'unknown'),
-                            'is_anomaly': bool(row_data.get('is_anomaly', False))
-                        }
+                        if is_aggregation and not has_sensor_id:
+                            # Handle aggregation results - create virtual sensor entry
+                            sensor_type = tags.get('sensor_type', 'all_sensors')
+                            agg_type = next((k for k in row_data.keys() if k in ['mean', 'max', 'min', 'count', 'sum']), 'unknown')
+                            agg_value = row_data.get(agg_type, 0)
+
+                            sensor_id = f"{sensor_type}_{agg_type}_result"
+
+                            sensors[sensor_id] = {
+                                'id': sensor_id,
+                                'type': sensor_type,
+                                'value': float(agg_value) if agg_value is not None else 0.0,
+                                'timestamp': row_data.get('time', ''),
+                                'equipment_id': 'aggregated_result',
+                                'location': 'system',
+                                'is_anomaly': False,
+                                'aggregation_type': agg_type
+                            }
+                        else:
+                            # Handle individual sensor data
+                            sensor_id = row_data.get('sensor_id', f'sensor_{serie_idx}_{i}')
+
+                            sensors[sensor_id] = {
+                                'id': sensor_id,
+                                'type': row_data.get('sensor_type', 'unknown'),
+                                'value': float(row_data.get('value', 0)) if row_data.get('value') is not None else 0.0,
+                                'timestamp': row_data.get('time', ''),
+                                'equipment_id': row_data.get('equipment_id', 'unknown'),
+                                'location': row_data.get('location', 'unknown'),
+                                'is_anomaly': bool(row_data.get('is_anomaly', False))
+                            }
             return {
                 "sensors": sensors,
                 "message": f"Retrieved {len(sensors)} sensors"
@@ -323,10 +449,19 @@ class EdgeLLMChatBot:
             logger.error("Error parsing InfluxQL response: %s", e, exc_info=True)
             return {"sensors": {}, "error": f"Parse error: {str(e)}"}
 
+    def _get_unit_for_sensor_type(self, sensor_type: str) -> str:
+        """Get appropriate unit for sensor type"""
+        unit_map = {
+            'temperature': 'celsius',
+            'pressure': 'kPa',
+            'vibration': 'mm/s',
+            'all_sensors': 'mixed'
+        }
+        return unit_map.get(sensor_type, 'unknown')
 
     def analyze_query(self, query: str) -> str:
         """Process user query with LLM using sensor data"""
-        sensor_data = self.get_sensor_data()
+        sensor_data = self.get_sensor_data(query)
 
         if "error" in sensor_data:
             logger.error("Failed to get sensor data: %s", sensor_data["error"])
@@ -339,43 +474,61 @@ class EdgeLLMChatBot:
             return "Sorry, the AI model is not available. Please try again later."
 
     def generate_llm_response(self, query: str, sensor_data: Dict[str, Any]) -> str:
-        """Generate response using CodeLlama with sensor data context"""
+        """Generate response using Qwen2.5-Coder with sensor data context"""
         try:
             # Create context with structured sensor data
             sensor_json = json.dumps(sensor_data.get('sensors', {}), indent=2)
             sensors_summary = self.create_sensor_summary(sensor_data)
 
-            context_prompt = f"""You are an industrial IoT system analyst. You have access to real-time sensor data in JSON format.
+            # Qwen2.5 chat format
+            messages = [
+                {"role": "system", "content": f"""You are an industrial IoT data analyst. You analyze JSON sensor data to answer questions.
 
 CURRENT SENSOR DATA (JSON):
 {sensor_json}
 
 SUMMARY: {sensors_summary}
 
-Analyze this structured sensor data and answer the user's question. Reference specific sensor IDs, values, and timestamps from the JSON data above."""
+Instructions:
+1. Analyze the JSON data above to answer the user's question
+2. For calculations (averages, counts, etc), compute from the actual values
+3. Reference specific sensor IDs and values in your response
+4. Be precise and concise"""},
+                {"role": "user", "content": query}
+            ]
 
-            # CodeLlama Instruct format
-            chat_prompt = f"[INST] {context_prompt}\n\nUser Query: {query} [/INST]"
+            # Apply chat template for Qwen (following HuggingFace example)
+            inputs = self.tokenizer.apply_chat_template(
+                messages,
+                add_generation_prompt=True,
+                tokenize=True,
+                return_dict=True,
+                return_tensors="pt",
+                max_length=2048,
+                truncation=True
+            )
 
-            # Tokenize and generate
-            inputs = self.tokenizer(chat_prompt, return_tensors="pt", truncation=True, max_length=512)
+            # Move inputs to device
             inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
+
+            logger.info("Input token count: %d", inputs["input_ids"].shape[-1])
 
             with torch.no_grad():
                 outputs = self.model.generate(
-                    inputs["input_ids"],
-                    max_new_tokens=150,
-                    temperature=0.1,
+                    **inputs,
+                    max_new_tokens=200,
+                    temperature=0.7,
                     do_sample=True,
-                    top_p=0.95,
-                    repetition_penalty=1.1,
-                    pad_token_id=self.tokenizer.eos_token_id,
-                    eos_token_id=self.tokenizer.eos_token_id
+                    top_p=0.9,
+                    repetition_penalty=1.1
                 )
 
-            # Decode and clean response
-            generated_tokens = outputs[0][len(inputs["input_ids"][0]):]
-            response = self.tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
+            logger.info("Output token count: %d", len(outputs[0]))
+
+            # Decode only the generated tokens (following HuggingFace example)
+            response = self.tokenizer.decode(outputs[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True).strip()
+
+            logger.info("Generated response: %s", response[:200])
 
             if not response or len(response) < 5:
                 return "I'm analyzing the sensor data. Could you rephrase your question?"

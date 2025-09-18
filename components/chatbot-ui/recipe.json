@@ -1,9 +1,9 @@
 {
   "RecipeFormatVersion": "2020-01-25",
   "ComponentName": "com.edge.llm.ChatBotUI",
-  "ComponentVersion": "1.0.8",
+  "ComponentVersion": "1.0.15",
   "ComponentType": "aws.greengrass.generic",
-  "ComponentDescription": "CodeLlama-7B ChatBot with InfluxDB 1.8 InfluxQL support for structured data analysis",
+  "ComponentDescription": "Qwen2.5-Coder-3B ChatBot with InfluxDB 1.8 InfluxQL support for JSON data analysis",
   "ComponentPublisher": "EdgeLLM",
   "ComponentDependencies": {
     "com.edge.llm.InfluxDB": {
@@ -38,7 +38,7 @@
       },
       "Artifacts": [
         {
-          "URI": "s3://edge-llm-greengrass-artifacts-533267070201/com.edge.llm.ChatBotUI/1.0.8/simple_chatbot.py"
+          "URI": "s3://edge-llm-greengrass-artifacts-533267070201/com.edge.llm.ChatBotUI/1.0.15/simple_chatbot.py"
         }
       ]
     }

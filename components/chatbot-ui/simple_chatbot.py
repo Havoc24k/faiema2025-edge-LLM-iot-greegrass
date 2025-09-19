@@ -258,7 +258,7 @@ class EdgeLLMChatBot:
         """Use Qwen to generate appropriate InfluxDB query based on user intent"""
         if not self.model_loaded:
             # Fallback to simple query if model not loaded
-            return "SELECT * FROM sensor_data WHERE vessel_id = 'MV_FAIEMA_2025' ORDER BY time DESC LIMIT 50"
+            return "SELECT * FROM sensor_data WHERE vessel_id = 'MV_FAIEMA_2025' ORDER BY time DESC LIMIT 500"
 
         try:
             schema_info = """
@@ -373,7 +373,12 @@ Rules:
             #     influx_query = "SELECT * FROM sensor_data ORDER BY time DESC LIMIT 50"
 
             # Hardcoded query: all sensor data grouped by sensor type for last 12 hours
-            influx_query = "SELECT MEAN(value), MAX(value), MIN(value), COUNT(value) FROM sensor_data WHERE vessel_id = 'MV_FAIEMA_2025' AND time > now() - 12h GROUP BY sensor_type"
+            # influx_query = "SELECT MEAN(value), MAX(value), MIN(value), COUNT(value) FROM sensor_data WHERE vessel_id = 'MV_FAIEMA_2025' AND time > now() - 12h GROUP BY sensor_type"
+            influx_query = """SELECT value, unit, sensor_type, sensor_id FROM sensor_data
+  WHERE vessel_id = 'MV_FAIEMA_2025'
+    AND time > now() - 1h
+    AND sensor_type =~ /^(engine_cylinder_temp|oil_pressure|vibration_main)$/
+  GROUP BY sensor_type"""
             logger.info("Using hardcoded InfluxDB query: %s", influx_query)
 
             params = {

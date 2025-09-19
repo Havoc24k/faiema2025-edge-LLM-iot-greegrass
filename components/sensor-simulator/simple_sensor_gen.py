@@ -15,7 +15,7 @@ def write_to_influxdb(sensor_data):
         lines = []
         for sensor_id, data in sensor_data.items():
             location = SensorDataGenerator._get_sensor_location(data['type'])
-            line = f"sensor_data,sensor_id={sensor_id},sensor_type={data['type']},vessel_id=MV_FAIEMA_2025,location={location} value={data['value']},is_anomaly={data['is_anomaly']} {data['timestamp'] * 1_000_000}"
+            line = f"sensor_data,sensor_id={sensor_id},sensor_type={data['type']},vessel_id=MV_FAIEMA_2025,location={location} value={data['value']},is_anomaly={data['is_anomaly']},unit=\"{data['unit']}\" {data['timestamp'] * 1_000_000}"
             lines.append(line)
 
         response = requests.post(
